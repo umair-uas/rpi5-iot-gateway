@@ -142,6 +142,7 @@ scripts/                     # host-side tooling (release, OTA bench, signing, T
 | Flashing, provisioning, target ops, SSH-namespace caveat | `docs/OPERATIONS.md` |
 | RAUC OTA install/rollback | `docs/RAUC_UPDATE.md`, `docs/OTA_UPDATE.md` |
 | Kernel config / CVE & driver backports | `docs/KERNEL.md`, `docs/KERNEL_CVE_PATCH.md`, `docs/KERNEL_DRIVER_BACKPORT.md` |
+| SBOM / CVE scanning, reading reports, userspace triage | `docs/SBOM_CVE.md` |
 | Release workflow | `docs/RELEASE.md` |
 | Partition layouts | `docs/PARTITIONS.md` |
 

@@ -2,8 +2,10 @@
 #
 # This file does NOT define a pip-installable package. Its purpose is
 # to give `uv` a reproducible runtime + dev environment for the FIT
-# signing tool and its test suite under scripts/fit-signing/. Yocto/BitBake
-# builds do not depend on uv or on this venv.
+# signing tool and the host-side tool test suites (FIT signing under
+# scripts/fit-signing/, sbom-cve report readers under scripts/sbom-cve/).
+# The sbom-cve scripts are themselves stdlib-only; only their pytest suite
+# uses this venv. Yocto/BitBake builds do not depend on uv or on this venv.
 #
 # Operator signing targets run through `uv run`; direct invocations of
 # scripts/fit-signing/sign_fit.py re-exec under .venv when needed.
@@ -26,7 +28,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["scripts/fit-signing/tests"]
+testpaths = ["scripts/fit-signing/tests", "scripts/sbom-cve/tests"]
 addopts = ["-ra"]
 
 [tool.uv]
