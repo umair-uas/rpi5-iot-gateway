@@ -18,6 +18,11 @@ DISTRO_VERSION ?= "${VENDOR_SHORT_NAME}.${IOTGW_VERSION}"
 # Default codename for this product line (override in CI if desired)
 DISTRO_CODENAME ?= "rpi5"
 
+# Cross-recipe CVE_STATUS (SELinux userspace fan-out). Recipe-wide false
+# positives live in per-recipe bbappends; this include is only for dispositions
+# that span many recipes of one project. Harmless outside the CVE/SBOM flow.
+require conf/distro/include/iotgw-cve-ignores.inc
+
 # RAUC bundle version policy:
 #   <distro-version>-<machine>-<image-track>-b<build-id>
 # where image-track is derived from iot-gw-image-{dev,prod,base,...}.
