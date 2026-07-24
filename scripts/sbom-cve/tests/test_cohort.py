@@ -82,6 +82,31 @@ def test_testdata_image_name_mismatch_is_integrity(tmp_path):
     assert any("mismatched pairing" in w for w in integrity)
 
 
+def test_testdata_empty_object_is_integrity(tmp_path):
+    stem = make_build(tmp_path, "20260724073419",
+                      roles=("cve", "manifest"))
+    (tmp_path / (stem + cohort.TESTDATA_SUFFIX)).write_text(json.dumps({}))
+    integrity, _ = cohort.check_cohort(tmp_path / (stem + cohort.CVE_JSON_SUFFIX))
+    assert any("no usable IMAGE_NAME" in w for w in integrity)
+
+
+def test_testdata_non_object_is_integrity_not_a_crash(tmp_path):
+    stem = make_build(tmp_path, "20260724073419",
+                      roles=("cve", "manifest"))
+    (tmp_path / (stem + cohort.TESTDATA_SUFFIX)).write_text(json.dumps([]))
+    integrity, _ = cohort.check_cohort(tmp_path / (stem + cohort.CVE_JSON_SUFFIX))
+    assert any("no usable IMAGE_NAME" in w for w in integrity)
+
+
+def test_testdata_empty_image_name_is_integrity(tmp_path):
+    stem = make_build(tmp_path, "20260724073419",
+                      roles=("cve", "manifest"))
+    (tmp_path / (stem + cohort.TESTDATA_SUFFIX)).write_text(
+        json.dumps({"IMAGE_NAME": ""}))
+    integrity, _ = cohort.check_cohort(tmp_path / (stem + cohort.CVE_JSON_SUFFIX))
+    assert any("no usable IMAGE_NAME" in w for w in integrity)
+
+
 def test_missing_companion_is_integrity(tmp_path):
     stem = make_build(tmp_path, "20260724073419", roles=("cve",))
     integrity, _ = cohort.check_cohort(tmp_path / (stem + cohort.CVE_JSON_SUFFIX))

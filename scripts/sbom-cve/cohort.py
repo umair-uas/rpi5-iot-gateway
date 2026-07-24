@@ -157,13 +157,20 @@ def check_cohort(report_path):
         image_name = None
         try:
             with open(comp["testdata"]) as f:
-                image_name = json.load(f).get("IMAGE_NAME")
+                testdata = json.load(f)
         except (OSError, ValueError):
             integrity.append("could not read testdata companion for %s" % stem)
-        if image_name and image_name != stem:
-            integrity.append(
-                "testdata IMAGE_NAME %r != selected scan stem %r "
-                "(mismatched pairing)" % (image_name, stem))
+        else:
+            if isinstance(testdata, dict):
+                image_name = testdata.get("IMAGE_NAME")
+            if not (isinstance(image_name, str) and image_name):
+                integrity.append(
+                    "testdata companion for %s has no usable IMAGE_NAME "
+                    "(cannot confirm pairing)" % stem)
+            elif image_name != stem:
+                integrity.append(
+                    "testdata IMAGE_NAME %r != selected scan stem %r "
+                    "(mismatched pairing)" % (image_name, stem))
 
     newer = _newer_build_id(stem, os.path.dirname(real))
     if newer:
