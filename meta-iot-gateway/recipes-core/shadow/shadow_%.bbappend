@@ -1,3 +1,8 @@
+# CVE_STATUS — CVE-2016-15024 refers to the unrelated doomsider/shadow project,
+# not the Linux shadow-utils suite shipped here (wrong-CPE match).
+# https://nvd.nist.gov/vuln/detail/CVE-2016-15024
+CVE_STATUS[CVE-2016-15024] = "cpe-incorrect: refers to the doomsider/shadow project, not shadow-utils"
+
 # Harden /etc/login.defs at package build time so values survive RAUC OTA updates.
 # shadow-utils does not support login.defs.d/ include directories, so patching
 # must happen here rather than via a drop-in fragment.

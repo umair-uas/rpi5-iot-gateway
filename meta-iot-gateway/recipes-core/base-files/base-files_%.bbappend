@@ -1,5 +1,10 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/base-files:"
 
+# CVE_STATUS — CVE-2018-6557 is an Ubuntu base-files packaging issue; OE-Core's
+# base-files is a different vendor/product implementation (wrong-CPE match).
+# https://nvd.nist.gov/vuln/detail/CVE-2018-6557
+CVE_STATUS[CVE-2018-6557] = "cpe-incorrect: Ubuntu base-files packaging issue, not OE-Core base-files"
+
 # fstab matches the WKS layout (A/B slots + LABEL=data)
 # Set custom hostname
 # Note: issue/motd are shipped by iotgw-banner.
