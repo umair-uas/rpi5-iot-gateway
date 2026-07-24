@@ -212,8 +212,10 @@ sbom-cve: | $(KAS_WORK_DIR)
 # Convention: a scan and its image outputs (manifest/testdata/SPDX/CVE JSON)
 # share one IMAGE_NAME stem (e.g. iot-gw-image-dev-raspberrypi5.rootfs-<BUILDNAME>)
 # and belong together — archive/reference them by that stem. The readers resolve
-# the dated file (not the un-dated symlink) and warn when the selected scan is
-# not the same, newest build; pass --strict (CVE_REPORT_ARGS=--strict) to fail.
+# the dated file (not the un-dated symlink) and warn when the selected scan is a
+# mismatched/incomplete cohort or not the newest build. Pass --strict (fail on a
+# broken cohort) and/or --require-latest (fail if a newer image exists), e.g.
+# CVE_REPORT_ARGS='--strict --require-latest'.
 CVE_REPORT_ARGS  ?=
 SBOM_REPORT_ARGS ?=
 cve-report:

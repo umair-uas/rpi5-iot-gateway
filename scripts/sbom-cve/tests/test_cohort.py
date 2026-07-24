@@ -70,28 +70,32 @@ def test_companions_present_and_missing(tmp_path):
 
 def test_clean_cohort_has_no_warnings(tmp_path):
     stem = make_build(tmp_path, "20260724073419")
-    assert cohort.check_cohort(tmp_path / (stem + cohort.CVE_JSON_SUFFIX)) == []
+    integrity, freshness = cohort.check_cohort(
+        tmp_path / (stem + cohort.CVE_JSON_SUFFIX))
+    assert integrity == [] and freshness == []
 
 
-def test_testdata_image_name_mismatch_warns(tmp_path):
+def test_testdata_image_name_mismatch_is_integrity(tmp_path):
     stem = make_build(tmp_path, "20260724073419",
                       image_name="other-image.rootfs-20260101000000")
-    warns = cohort.check_cohort(tmp_path / (stem + cohort.CVE_JSON_SUFFIX))
-    assert any("mismatched pairing" in w for w in warns)
+    integrity, _ = cohort.check_cohort(tmp_path / (stem + cohort.CVE_JSON_SUFFIX))
+    assert any("mismatched pairing" in w for w in integrity)
 
 
-def test_missing_companion_warns(tmp_path):
+def test_missing_companion_is_integrity(tmp_path):
     stem = make_build(tmp_path, "20260724073419", roles=("cve",))
-    warns = cohort.check_cohort(tmp_path / (stem + cohort.CVE_JSON_SUFFIX))
-    assert any("no manifest companion" in w for w in warns)
-    assert any("no testdata companion" in w for w in warns)
+    integrity, _ = cohort.check_cohort(tmp_path / (stem + cohort.CVE_JSON_SUFFIX))
+    assert any("no manifest companion" in w for w in integrity)
+    assert any("no testdata companion" in w for w in integrity)
 
 
-def test_newer_image_warns(tmp_path):
-    old = make_build(tmp_path, "20260722113844")
-    make_build(tmp_path, "20260724073419")  # newer build present in same dir
-    warns = cohort.check_cohort(tmp_path / (old + cohort.CVE_JSON_SUFFIX))
-    assert any("newer image build 20260724073419" in w for w in warns)
+def test_newer_image_is_freshness_not_integrity(tmp_path):
+    old = make_build(tmp_path, "20260722113844")  # full, intact cohort
+    make_build(tmp_path, "20260724073419")        # newer build present in dir
+    integrity, freshness = cohort.check_cohort(
+        tmp_path / (old + cohort.CVE_JSON_SUFFIX))
+    assert integrity == []  # the older scan's own cohort is intact
+    assert any("newer image build 20260724073419" in w for w in freshness)
 
 
 def test_newer_image_of_other_variant_does_not_warn(tmp_path):
@@ -99,16 +103,67 @@ def test_newer_image_of_other_variant_does_not_warn(tmp_path):
     # a newer build of a DIFFERENT image variant must not flag the dev scan
     prod = "iot-gw-image-prod-raspberrypi5.rootfs-20260724073419"
     (tmp_path / (prod + cohort.MANIFEST_SUFFIX)).write_text("x 1.0\n")
-    warns = cohort.check_cohort(tmp_path / (dev + cohort.CVE_JSON_SUFFIX))
-    assert not any("newer image build" in w for w in warns)
+    _, freshness = cohort.check_cohort(tmp_path / (dev + cohort.CVE_JSON_SUFFIX))
+    assert freshness == []
 
 
-def test_strict_mode_exits_nonzero_on_stale_scan(tmp_path):
-    old = make_build(tmp_path, "20260722113844")
-    make_build(tmp_path, "20260724073419")  # newer image => stale selection
+def test_resolve_newest_skips_dangling_symlink(tmp_path):
+    stem = make_build(tmp_path, "20260724073419", roles=("cve",))
+    dated = tmp_path / (stem + cohort.CVE_JSON_SUFFIX)
+    stale = tmp_path / (LINK_STEM + cohort.CVE_JSON_SUFFIX)
+    os.symlink("gone" + cohort.CVE_JSON_SUFFIX, stale)  # dangling symlink
+    got = cohort.resolve_newest(str(tmp_path / ("*" + cohort.CVE_JSON_SUFFIX)))
+    assert os.path.basename(got) == dated.name  # dangling link skipped, no crash
+
+
+def test_resolve_newest_tie_is_deterministic(tmp_path):
+    a = tmp_path / (LINK_STEM + "-20260724070000" + cohort.CVE_JSON_SUFFIX)
+    b = tmp_path / (LINK_STEM + "-20260724080000" + cohort.CVE_JSON_SUFFIX)
+    a.write_text("{}")
+    b.write_text("{}")
+    os.utime(a, (1000, 1000))
+    os.utime(b, (1000, 1000))  # identical mtime -> tie broken by path
+    got = cohort.resolve_newest(str(tmp_path / ("*" + cohort.CVE_JSON_SUFFIX)))
+    assert os.path.basename(got) == b.name  # greater path wins, stably
+
+
+def test_cve_reader_strict_tolerates_stale_but_intact(tmp_path):
+    old = make_build(tmp_path, "20260722113844")  # full cohort
+    make_build(tmp_path, "20260724073419")        # newer image present
     cve = tmp_path / (old + cohort.CVE_JSON_SUFFIX)
     r = subprocess.run(
         [sys.executable, str(SBOM_DIR / "cve-report.py"), "--strict", "-i", str(cve)],
+        capture_output=True, text=True)
+    assert r.returncode == 0                    # freshness-only: not a failure
+    assert "newer image build" in r.stderr      # but still warned
+
+
+def test_cve_reader_require_latest_fails_on_newer_image(tmp_path):
+    old = make_build(tmp_path, "20260722113844")
+    make_build(tmp_path, "20260724073419")
+    cve = tmp_path / (old + cohort.CVE_JSON_SUFFIX)
+    r = subprocess.run(
+        [sys.executable, str(SBOM_DIR / "cve-report.py"),
+         "--require-latest", "-i", str(cve)],
+        capture_output=True, text=True)
+    assert r.returncode != 0
+
+
+def test_cve_reader_strict_fails_on_missing_companion(tmp_path):
+    stem = make_build(tmp_path, "20260724073419", roles=("cve",))  # no companions
+    cve = tmp_path / (stem + cohort.CVE_JSON_SUFFIX)
+    r = subprocess.run(
+        [sys.executable, str(SBOM_DIR / "cve-report.py"), "--strict", "-i", str(cve)],
+        capture_output=True, text=True)
+    assert r.returncode != 0
+    assert "WARNING" in r.stderr
+
+
+def test_sbom_reader_strict_fails_on_missing_companion(tmp_path):
+    stem = make_build(tmp_path, "20260724073419", roles=("aug_spdx",))
+    spdx = tmp_path / (stem + cohort.AUG_SPDX_SUFFIX)
+    r = subprocess.run(
+        [sys.executable, str(SBOM_DIR / "sbom-report.py"), "--strict", "-i", str(spdx)],
         capture_output=True, text=True)
     assert r.returncode != 0
     assert "WARNING" in r.stderr

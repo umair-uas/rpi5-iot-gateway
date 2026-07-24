@@ -71,8 +71,11 @@ Every image output shares one `IMAGE_NAME` stem, e.g.
   a copy (a required `.manifest`/`.testdata.json` companion is missing), its
   testdata `IMAGE_NAME` disagrees with the stem (mismatched pairing), or a
   **newer image build exists** than the scan (image rebuilt, scan not re-run);
-- accept `--strict` to exit non-zero on any such warning (use it for
-  release/CI; interactive use warns and continues).
+- accept `--strict` to exit non-zero on a cohort **integrity** failure
+  (a missing/mismatched companion), and `--require-latest` to additionally fail
+  when a **newer** image build exists than the scan. A stale-but-intact scan
+  chosen with `-i` is a deliberate selection, so it is not an integrity failure;
+  interactive use warns and continues.
 
 **Convention:** a scan and its image outputs (`.manifest`, `.testdata.json`,
 `.spdx.json`, `.sbom-cve-check.*.json`) belong together — reference and archive

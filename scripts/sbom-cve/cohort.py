@@ -65,10 +65,13 @@ def resolve_newest(deploy_glob):
     dated file.
     """
     reals = {os.path.realpath(h) for h in glob.glob(deploy_glob)}
+    reals = {p for p in reals if os.path.exists(p)}  # drop dangling symlinks
     if not reals:
-        die("no files match %s under the deploy tree. "
+        die("no readable files match %s under the deploy tree. "
             "Pass -i explicitly or build an image first." % deploy_glob)
-    return max(reals, key=os.path.getmtime)
+    # (mtime, path) so an mtime tie is broken deterministically by path rather
+    # than by hash-seeded set iteration order.
+    return max(reals, key=lambda p: (os.path.getmtime(p), p))
 
 
 def build_stem(path):
@@ -125,20 +128,28 @@ def _newer_build_id(stem, deploy_dir):
 
 
 def check_cohort(report_path):
-    """Same-build warnings for the selected report. Empty == consistent cohort.
+    """Classify same-build issues for the selected report.
 
-    Surfaces: a required image companion missing (scan is a copy or the image
-    outputs were pruned); testdata whose IMAGE_NAME disagrees with the stem
-    (mismatched pairing); and a newer image build than the selected scan.
+    Returns (integrity, freshness):
+
+    - integrity: the selected scan's OWN cohort is broken — a required
+      .manifest/.testdata.json companion is missing (the scan is a copy, or the
+      image outputs were pruned), or testdata IMAGE_NAME disagrees with the stem
+      (mismatched pairing). These are validation failures.
+    - freshness: a newer image build exists than the selected scan. This is a
+      staleness heads-up, not corruption — an explicitly chosen older build is
+      legitimate, so it does not fail --strict (see --require-latest).
+
+    Empty lists == a consistent, newest cohort.
     """
-    warnings = []
+    integrity, freshness = [], []
     real = os.path.realpath(report_path)
     stem = build_stem(real)
     comp = companions(real)
 
     for role in ("manifest", "testdata"):
         if comp[role] is None:
-            warnings.append(
+            integrity.append(
                 "no %s companion for %s (scan may be a copy, or the image "
                 "outputs were pruned)" % (role, stem))
 
@@ -148,34 +159,39 @@ def check_cohort(report_path):
             with open(comp["testdata"]) as f:
                 image_name = json.load(f).get("IMAGE_NAME")
         except (OSError, ValueError):
-            warnings.append("could not read testdata companion for %s" % stem)
+            integrity.append("could not read testdata companion for %s" % stem)
         if image_name and image_name != stem:
-            warnings.append(
+            integrity.append(
                 "testdata IMAGE_NAME %r != selected scan stem %r "
                 "(mismatched pairing)" % (image_name, stem))
 
     newer = _newer_build_id(stem, os.path.dirname(real))
     if newer:
-        warnings.append(
+        freshness.append(
             "a newer image build %s exists than the selected scan %s "
-            "(re-run `make sbom-cve`, or pass -i for the intended build)"
-            % (newer, _build_id(stem)))
+            "(re-run `make sbom-cve` for the latest, or select deliberately "
+            "with -i)" % (newer, _build_id(stem)))
 
-    return warnings
+    return integrity, freshness
 
 
-def report_provenance(path, strict, label):
+def report_provenance(path, strict, require_latest, label):
     """Print the resolved dated provenance line + any same-build warnings.
 
-    Returns the real (dated) path. In strict mode, exits non-zero if the cohort
-    check produced warnings.
+    Returns the real (dated) path. Exits non-zero when --strict and the cohort
+    has integrity issues, or when --require-latest and a newer build exists.
+    A stale-but-intact scan chosen with -i is not an error under --strict alone.
     """
     real = os.path.realpath(path)
     print("# %s: %s" % (label, os.path.basename(real)))
-    warnings = check_cohort(real)
-    for w in warnings:
+    integrity, freshness = check_cohort(real)
+    for w in integrity + freshness:
         print("# WARNING: %s" % w, file=sys.stderr)
-    if warnings and strict:
-        die("cohort validation failed in --strict mode (%d warning(s))"
-            % len(warnings))
+    reasons = []
+    if strict and integrity:
+        reasons.append("%d integrity" % len(integrity))
+    if require_latest and freshness:
+        reasons.append("%d freshness" % len(freshness))
+    if reasons:
+        die("cohort validation failed (%s issue(s))" % ", ".join(reasons))
     return real

@@ -122,11 +122,14 @@ def main(argv):
     ap.add_argument("--all", action="store_true", help="show every license")
     ap.add_argument("--csv", help="write package/license/download CSV to path")
     ap.add_argument("--strict", action="store_true",
-                    help="exit non-zero if the selected SBOM fails cohort checks")
+                    help="exit non-zero on a cohort integrity failure "
+                         "(missing/mismatched companion)")
+    ap.add_argument("--require-latest", action="store_true",
+                    help="also fail if a newer image build exists than the SBOM")
     args = ap.parse_args(argv)
 
     path = args.input or resolve_newest(DEPLOY_GLOB)
-    path = report_provenance(path, args.strict, "sbom")
+    path = report_provenance(path, args.strict, args.require_latest, "sbom")
     print("# loading %s (large graph; a moment) ..." % os.path.basename(path),
           file=sys.stderr)
     graph = load(path).get("@graph", [])
