@@ -17,11 +17,11 @@ Usage:
 
 import argparse
 import csv
-import glob
-import json
 import os
 import re
 import sys
+
+from cohort import load, report_provenance, resolve_newest
 
 # Newest matching SBOM under the standard deploy tree when -i is absent.
 DEPLOY_GLOB = "build/tmp/deploy/images/*/*.sbom-cve-check.spdx.json"
@@ -82,30 +82,6 @@ def classify_license(expr):
     return "unknown", "MEDIUM"
 
 
-def die(msg):
-    print("error: %s" % msg, file=sys.stderr)
-    sys.exit(1)
-
-
-def locate():
-    """Return the newest SPDX SBOM under the deploy tree."""
-    hits = glob.glob(DEPLOY_GLOB)
-    if not hits:
-        die("no *.sbom-cve-check.spdx.json under build/tmp/deploy/images. "
-            "Pass -i explicitly or build an image first.")
-    return max(hits, key=os.path.getmtime)
-
-
-def load(path):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except FileNotFoundError:
-        die("input not found: %s" % path)
-    except json.JSONDecodeError as e:
-        die("malformed JSON in %s: %s" % (path, e))
-
-
 def recipe_key(spdx_id):
     """The per-recipe document segment after /spdxdocs/ — the node join key.
 
@@ -145,9 +121,15 @@ def main(argv):
     ap.add_argument("--top", type=int, default=25, help="license rows to show")
     ap.add_argument("--all", action="store_true", help="show every license")
     ap.add_argument("--csv", help="write package/license/download CSV to path")
+    ap.add_argument("--strict", action="store_true",
+                    help="exit non-zero on a cohort integrity failure "
+                         "(missing/mismatched companion)")
+    ap.add_argument("--require-latest", action="store_true",
+                    help="also fail if a newer image build exists than the SBOM")
     args = ap.parse_args(argv)
 
-    path = args.input or locate()
+    path = args.input or resolve_newest(DEPLOY_GLOB)
+    path = report_provenance(path, args.strict, args.require_latest, "sbom")
     print("# loading %s (large graph; a moment) ..." % os.path.basename(path),
           file=sys.stderr)
     graph = load(path).get("@graph", [])
@@ -202,7 +184,6 @@ def main(argv):
         category, _ = classify_license(expr)
         packages_by_category[category] = packages_by_category.get(category, 0) + 1
 
-    print("# sbom: %s" % os.path.basename(path))
     print("\n=== inventory ===")
     print("  recipes                  %5d" % purpose.get("specification", 0))
     print("  installed packages       %5d" % purpose.get("install", 0))

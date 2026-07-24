@@ -1,6 +1,6 @@
 .PHONY: help base dev prod \
         bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm bundle-dev-full-fit-resign bundle-prod-full-fit bundle-prod-full-fit-resign \
-        tools-venv test-sign-fit test-sign-fit-softhsm \
+        tools-venv test-sign-fit test-sign-fit-softhsm test-sbom-cve \
         sbom-cve cve-report sbom-report layers parse clean-lock
 
 KAS ?= kas
@@ -70,6 +70,7 @@ help:
 	@echo "  make sbom-cve                     # Build dev image with wrynose SBOM+CVE reports"
 	@echo "  make cve-report                   # Summarise the CVE report (buckets, kernel split, CVE_STATUS scaffold)"
 	@echo "  make sbom-report                  # Summarise the SBOM (license inventory + HIGH-risk review)"
+	@echo "  make test-sbom-cve                # Run sbom-cve report/cohort tests (fixtures, no build)"
 	@echo "  -- Utilities --"
 	@echo "  make layers                       # Show layers for RAUC stack"
 	@echo "  make parse                        # Parse-only for RAUC stack"
@@ -175,6 +176,11 @@ test-sign-fit:
 test-sign-fit-softhsm:
 	SOFTHSM_AVAILABLE=1 $(UV) run pytest scripts/fit-signing/tests/
 
+# sbom-cve report/cohort readers: fixture-based tests, no Yocto build required.
+# The readers are stdlib-only; only this test suite uses the uv venv.
+test-sbom-cve:
+	$(UV) run pytest scripts/sbom-cve/tests/
+
 bundle-dev-full-fit-resign: | $(KAS_WORK_DIR)
 	$(call iotgw_bitbake,bitbake -C do_configure iot-gw-bundle-full-fit,$(BASE),iot-gw-image-dev)
 
@@ -203,6 +209,13 @@ sbom-cve: | $(KAS_WORK_DIR)
 
 # Host-side report readers over the sbom-cve-check deploy artifacts. Stdlib-only
 # Python (no venv), read-only — run after `make sbom-cve` produced the reports.
+# Convention: a scan and its image outputs (manifest/testdata/SPDX/CVE JSON)
+# share one IMAGE_NAME stem (e.g. iot-gw-image-dev-raspberrypi5.rootfs-<BUILDNAME>)
+# and belong together — archive/reference them by that stem. The readers resolve
+# the dated file (not the un-dated symlink) and warn when the selected scan is a
+# mismatched/incomplete cohort or not the newest build. Pass --strict (fail on a
+# broken cohort) and/or --require-latest (fail if a newer image exists), e.g.
+# CVE_REPORT_ARGS='--strict --require-latest'.
 CVE_REPORT_ARGS  ?=
 SBOM_REPORT_ARGS ?=
 cve-report:

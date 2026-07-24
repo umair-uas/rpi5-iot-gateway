@@ -78,6 +78,10 @@ step-by-step workflow: identifying the right stable backport, annotating
 for Yocto QA (`Upstream-Status:`, `CVE:`), wiring into `SRC_URI`, and
 tracking the patch's sunset on the next `SRCREV` bump.
 
+For image-wide scanning and userspace-package triage — generating the SBOM
+and CVE report (`make sbom-cve`), reading it, and turning a scanner row into a
+`CVE_STATUS` disposition — see [SBOM & CVE Scanning — Field Guide](SBOM_CVE.md).
+
 ---
 
 ## Compiler Hardening
