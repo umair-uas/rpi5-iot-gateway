@@ -7,12 +7,19 @@ on:
     branches: [ main, "release-*" ]
   workflow_dispatch:
 
+# This job only reads the tree — checkout, shellcheck, yamllint, greps.
+# Without an explicit block the token inherits the repository default, which
+# an admin can flip to read-write in one click, silently granting write to a
+# workflow that runs on every push to main.
+permissions:
+  contents: read
+
 jobs:
   hygiene:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Ensure release docs/scripts exist
         run: |
@@ -29,7 +36,9 @@ jobs:
 
       - name: shellcheck (all tracked scripts)
         run: |
-          mapfile -t scripts < <(git ls-files 'scripts/*.sh')
+          # scripts/hooks/* are extension-less by git-hook convention, so the
+          # *.sh glob misses them — list them explicitly or they go unlinted.
+          mapfile -t scripts < <(git ls-files 'scripts/*.sh' 'scripts/hooks/*')
           if [[ ${#scripts[@]} -eq 0 ]]; then
             echo "no tracked scripts/*.sh found"
             exit 0

@@ -1,0 +1,31 @@
+---
+# Keeps the SHA pins in .github/workflows/ from rotting.
+#
+# Every `uses:` in this repo is pinned to a full commit SHA with the version
+# in a trailing comment. Dependabot understands that pairing: it bumps the
+# SHA and rewrites the comment together, so the pin stays both immutable and
+# legible. Without this, pinning just freezes the actions at whatever was
+# current the day someone pinned them.
+#
+# No `pip` ecosystem entry on purpose: pyproject.toml / uv.lock drive the
+# host-side signing tooling (see docs/FIT_BOOT_SIGNING.md), which CI never
+# installs — the only Python CI touches is an inline, already-pinned
+# `pip install yamllint==...`. Add a pip entry if that changes.
+#
+# No Yocto layer entry is possible: layer revisions are SHA-pinned in
+# rpi5.yml / kas/*.yml, which Dependabot does not parse. Those bumps stay
+# manual and deliberate.
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      # Match AGENTS.md "Commit style" so the commit-msg hook and git-cliff
+      # both accept what Dependabot opens.
+      prefix: "chore(ci)"
+    labels:
+      - "dependencies"
+    open-pull-requests-limit: 5
