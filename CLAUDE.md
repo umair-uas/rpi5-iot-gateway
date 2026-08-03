@@ -10,16 +10,37 @@ The rest of this file is Claude-Code-specific tooling that does not apply to oth
 
 ## Domain skills available
 
-Yocto/embedded work has dedicated skills — invoke when the task fits:
+Two repo-local skills in `.claude/skills/` — invoke when the task fits:
 
-- `add-package`, `build-image`, `debug-bitbake` — image assembly and build failures
-- `create-kernel-fragment`, `patch-kernel-bsp`, `patch-uboot-bsp` — kernel/U-Boot work
-- `devtool-workflow` — iterative recipe source changes via `devtool`
-- `yocto-worktree` (repo-local, `.claude/skills/`) — isolated worktrees for subagent/parallel builds: `kas/local.yml` seeding, shared-cache verification, branch rename-before-PR, locked-worktree cleanup
+- `devtool-workflow` — iterating on recipe source (U-Boot, kernel, app) via `devtool` instead of hand-editing patches: `--no-overrides`, patch export destinations, mandatory contamination verification, the U-Boot savedefconfig flow
+- `yocto-worktree` — isolated worktrees for subagent/parallel builds: `kas/local.yml` seeding, shared-cache verification, branch rename-before-PR, locked-worktree cleanup
+
+A previous shared set (`add-package`, `build-image`, `debug-bitbake`,
+`create-kernel-fragment`, `patch-kernel-bsp`, `patch-uboot-bsp`) was
+removed: it was generic scarthgap-era procedure that restated
+`AGENTS.md` and `.claude/rules/` less precisely, and its raw
+`kas shell` examples contradicted the `scripts/env.sh` requirement.
+BitBake failure triage now lives in `.claude/rules/yocto-patterns.md`.
+Everything else those skills covered is in `AGENTS.md` and the rules —
+read those instead.
 
 ## Subagents & parallel work
 
 Delegate build-running or build-polluting tasks to subagents with `isolation: worktree`, and follow the `yocto-worktree` skill for seeding, coordination, and cleanup. Recipe/patch conventions live in `.claude/rules/recipe-conventions.md` (auto-loaded as a rule; also route subagents there explicitly).
+
+## Commit trailers
+
+The canonical rule is `AGENTS.md` §"AI attribution in commits": an
+`Assisted-by: <tool>:<model-id>` line per model that touched the change. From
+Claude Code that is `Assisted-by: claude-code:<the model id you are running as>`,
+followed by Claude Code's default footer (the `🤖 Generated with [Claude
+Code](...)` line plus `Co-Authored-By:`), exactly as your harness instructions
+give it to you.
+
+**Do not copy a model name from this file or from a past commit.** This section
+deliberately contains no literal model id — read your own model identity from
+your instructions and write that. A pinned string goes stale silently and turns
+the audit trail into fiction.
 
 ## Serial console + target diagnostics MCPs
 

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Patch U-Boot BSP"
-  short_description: "Patch U-Boot recipes and layer files for BSP changes"
-  default_prompt: "Use $patch-uboot-bsp to apply and wire a U-Boot patch in the Yocto BSP layer."

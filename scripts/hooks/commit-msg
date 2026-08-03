@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Enforce the Conventional Commit subject documented in AGENTS.md
+# ("Commit style"). cliff.toml routes release notes off these subjects on
+# `v*` tag push — an off-pattern subject does not fail anything loudly, it
+# just lands in the "Other" bucket and quietly degrades the changelog.
+# Override (only if you are certain) with: git commit --no-verify
+set -euo pipefail
+
+msg_file="$1"
+
+# Subject = first line that is neither blank nor a git comment.
+subject="$(grep -vE '^[[:space:]]*(#|$)' "$msg_file" | head -1 || true)"
+
+# Empty message: git aborts on its own, nothing to add.
+[ -z "$subject" ] && exit 0
+
+# Subjects git itself generates, or that rebase consumes before they ever
+# reach history. Not ours to police.
+case "$subject" in
+    "Merge "*|"Revert "*|"fixup! "*|"squash! "*|"amend! "*) exit 0 ;;
+esac
+
+# Types that cliff.toml actually parses (feat/fix/docs/refactor/test/chore
+# plus build/ci/perf/style/revert). Keep in sync with AGENTS.md and
+# cliff.toml's commit_parsers.
+types='feat|fix|docs|refactor|test|chore|build|ci|perf|style|revert'
+
+# Scope charset covers this repo's real scopes: hyphenated (ota-certs,
+# sbom-cve, machine-id) and comma-composed multi-scope (fit,uboot).
+if ! printf '%s' "$subject" | grep -qE "^(${types})(\([a-z0-9][a-z0-9._,/-]*\))?!?: .+"; then
+    printf '\nCOMMIT BLOCKED — subject is not a Conventional Commit:\n\n  %s\n\n' "$subject" >&2
+    printf 'Expected: <type>(<scope>): <subject>\n' >&2
+    printf 'Types:    %s\n' "${types//|/, }" >&2
+    printf 'Example:  fix(sbom-cve): scope CVE_STATUS to the affected recipes\n\n' >&2
+    printf 'See AGENTS.md "Commit style". Override only if certain: git commit --no-verify\n\n' >&2
+    exit 1
+fi
+
+# AGENTS.md: "no period". Lowercase-first is deliberately NOT enforced —
+# real subjects here open with initialisms (VEX, CVE, FIT, TPM, PID1) and
+# blocking those costs more than the rule buys.
+case "$subject" in
+    *.)
+        printf '\nCOMMIT BLOCKED — subject ends with a period:\n\n  %s\n\n' "$subject" >&2
+        printf 'AGENTS.md "Commit style": imperative, lowercase, no period.\n\n' >&2
+        exit 1
+        ;;
+esac
+
+# Advisory only. A long subject is ugly, not broken, and hard-blocking it
+# would reject valid work at the worst possible moment.
+if [ "${#subject}" -gt 72 ]; then
+    printf 'warning: subject is %d chars (>72); git log --oneline will truncate it.\n' "${#subject}" >&2
+fi

@@ -15,12 +15,66 @@ kernel/u-boot rebuild starts from a fresh artifact in the build dir;
 mutations exist only in `DEPLOYDIR`. No cleanup of previous-run residue
 is needed.
 
-## Override Syntax (Scarthgap+)
+## BitBake failure triage
 
-Use colon-based overrides, not underscore:
+Validate progressively — `make parse` first, then the affected recipe's
+task, then the image (AGENTS.md, "Working economically"). Extract the
+first causal error from the task log; don't paste whole build logs.
+
+```bash
+# Task log for a failing recipe
+find build/tmp/work -path "*/<recipe>/*/temp/log.do_<task>" | head -1
+
+# Variable inspection (cheap; not blocked by the FIT signing guard)
+. scripts/env.sh && kas shell kas/local.yml -c "bitbake-getvar -r <recipe> <VAR>"
+
+# Who provides / who appends
+. scripts/env.sh && kas shell kas/local.yml -c "bitbake-layers show-recipes <recipe>"
+. scripts/env.sh && kas shell kas/local.yml -c "bitbake-layers show-appends | grep -i <recipe>"
+
+# Re-run one task
+. scripts/env.sh && kas shell kas/local.yml -c "bitbake <recipe> -c <task> -f"
+```
+
+| Error | Likely cause |
+|---|---|
+| `Nothing PROVIDES` | Missing `DEPENDS`, or the layer isn't in the kas composition |
+| `do_fetch failed` | Bad URI, no network, or wrong `SRCREV` |
+| `QA Issue: -dev contains` | Missing `RDEPENDS` or `FILES` entries |
+| `multiple providers` | Need `PREFERRED_PROVIDER` in distro/machine conf |
+| `do_patch failed` | Patch base doesn't match current `SRCREV` — regenerate, don't rebase hunks |
+| `Missing Upstream-Status in patch` | `patch-status` QA gate; add the header |
+| `NotImplementedError: $((` | BitBake shell-parser limit — see top of this file |
+| `u-boot:do_configure` fails | FIT signing guard: no operator key in `kas/local.yml` |
+| Taskhash / sstate mismatch | Usually a patch-header edit (see below); `-c cleansstate` only as a last resort |
+| Upstream layers appear at repo root | A bare `kas shell` without `. scripts/env.sh` — see AGENTS.md |
+| `abort()ing pseudo client`, `died with SIGABRT` | Stale pseudo DB — see below |
+
+### Pseudo abort after an unclean shutdown
+
+A task dying with `SIGABRT` on an innocuous command (`rm -rf …`) is
+usually not that command failing. Check the recipe's `pseudo/pseudo.log`
+for `inode mismatch` or `path mismatch`:
+
+```
+inode mismatch: '…/packages-split' ino 16649370 in db, 4195813 in request.
+```
+
+Pseudo's database still holds inodes from an earlier run while the files
+on disk were recreated with different ones, so its server aborts the
+client. It means a previous build died mid-task — OOM kill, reboot,
+killed cooker — not that anything in the recipe is wrong.
+
+Fix: `bitbake <recipe> -c clean`. That drops the WORKDIR **and** the
+poisoned pseudo DB while leaving the sstate cache intact, so the rebuild
+usually restores from sstate rather than recompiling. Reach for
+`-c cleansstate` only if the clean rebuild fails too — on a kernel it
+costs a full compile.
+
+## Override Syntax (wrynose 6.0)
 
 ```bitbake
-# Correct (Scarthgap)
+# Correct
 RDEPENDS:${PN} = "dep"
 do_install:append() { }
 SRC_URI:append:raspberrypi5 = " file://rpi5.patch"

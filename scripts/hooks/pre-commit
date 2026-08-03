@@ -11,7 +11,12 @@ while IFS= read -r f; do
         *.key|*-key.pem|*.p12|*.pfx|*.jks|id_rsa|*/id_rsa|id_ed25519|*/id_ed25519)
                                       blocked+="  $f  (key-like name)"$'\n' ;;
     esac
-    if git show ":$f" 2>/dev/null | grep -qaE 'PRIVATE KEY|BEGIN OPENSSH PRIVATE'; then
+    # Match the PEM armor line, not the bare words "PRIVATE KEY". The loose
+    # form blocked this hook's own source and would block docs/SECURITY.md,
+    # docs/FIT_BOOT_SIGNING.md, or any script that discusses key handling —
+    # a guard that blocks writing about keys is a guard that gets disabled.
+    # Armor form covers PKCS#8, RSA, EC, ENCRYPTED, and OPENSSH headers.
+    if git show ":$f" 2>/dev/null | grep -qaE -e '-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----'; then
         blocked+="  $f  (contains a PRIVATE KEY block)"$'\n'
     fi
     # ACMR (not AM): include rename/copy targets, so `git mv notes keys/ca.key`

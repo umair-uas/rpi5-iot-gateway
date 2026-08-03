@@ -106,6 +106,7 @@ scripts/                     # host-side tooling (release, OTA bench, signing, T
   rules/yocto-patterns.md    # wrynose syntax + parser limits + identity/rootfs patterns
   rules/recipe-conventions.md # read before authoring a recipe or shipping a patch
   rules/cross-compilation.md # aarch64-poky-linux SDK notes — read before app cross-builds
+  skills/devtool-workflow/   # devtool modify→finish cycle, patch export + verification
   skills/yocto-worktree/     # isolated-worktree workflow for parallel/build-heavy agents
 ```
 
@@ -116,10 +117,109 @@ scripts/                     # host-side tooling (release, OTA bench, signing, T
 - **Recipe & patch conventions** — HOMEPAGE, patch identity/attribution, `Upstream-Status` taxonomy, `/root` paths, `SYSTEMD_AUTO_ENABLE`, and the sstate patch-header rebuild gotcha live in `.claude/rules/recipe-conventions.md`. Read it before authoring a recipe or shipping a patch.
 - **Cross-compile target is aarch64-poky-linux** — `.claude/rules/cross-compilation.md` covers SDK setup, CMake/Rust/Go specifics, and verification commands.
 - **Public-repo discipline** — committed files reference only repo-relative paths or public `docs/`; never absolute `/home/<user>/...` paths, device IPs, or home-lab topology. Operator-local material goes in `kas/local.yml` / `scripts/env.sh`-managed locations (gitignored).
-- **Commit style**: `<type>(<scope>): <subject>` — imperative, lowercase, no period. Types: `feat|fix|docs|refactor|test|chore`. No `Co-Authored-By` or other trailers.
+- **Commit style**: `<type>(<scope>): <subject>` — imperative, no period. Types: `feat|fix|docs|refactor|test|chore|build|ci|perf|style|revert` — the set `cliff.toml` parses; anything else lands in the changelog's "Other" bucket. Scopes may be hyphenated (`ota-certs`, `sbom-cve`) or comma-composed (`fit,uboot`). Enforced by the `commit-msg` hook. Prefer a lowercase subject, but leading initialisms (`CVE`, `FIT`, `TPM`) are fine and the hook does not block them. AI-assisted commits carry attribution trailers — see §"AI attribution in commits".
 - **Branch naming**: `<type>-<scope>-<subject>`, matching commit style (e.g. `feat-rauc-pki-yubikey-stage1`).
 - **PR scope**: bundle trivial recipe/version bumps into a related feature PR rather than landing them standalone.
 - **Don't write CHANGELOG entries for trivial bumps** — changelog is assembled in batches before a release.
+
+## Git hooks
+
+Tracked in `scripts/hooks/`, activated per clone by `core.hooksPath`:
+
+```bash
+make hooks     # run once after cloning; idempotent
+```
+
+- `pre-commit` — refuses staged private-key material and anything under
+  `keys/`. Defense-in-depth over `.gitignore`, which does not stop
+  `git add -f` or a `git mv` into `keys/`. Checks renames too.
+- `commit-msg` — enforces the Conventional Commit subject above, so the
+  git-cliff release notes stay parseable. Merge/revert/fixup subjects
+  pass through untouched.
+
+`core.hooksPath` is local config, not a tracked file: a fresh clone has
+**both hooks silently disabled** until `make hooks` runs. Neither hook is
+a security control on its own — CI and review still are. Escape hatch for
+a hook you are certain is wrong: `git commit --no-verify`.
+
+## AI attribution in commits
+
+Every commit an agent contributed to ends with an `Assisted-by:` trailer naming
+the tool and the **exact model that did the work**:
+
+```
+Assisted-by: <tool>:<model-id>
+```
+
+Tool names in use: `claude-code`, `codex`, `kiro`. The model id half is
+deliberately shown as a placeholder here and nowhere spelled out — see the first
+rule below.
+
+- **Never copy a model id out of this file, `CLAUDE.md`, or a past commit.**
+  State the model the session is actually running as. A doc-pinned model string
+  goes stale the moment the next release ships, and every agent that copies it
+  writes a trailer that is quietly false.
+- **One trailer per model that touched the change, in the order they touched
+  it.** If Sonnet drafted and Opus later reviewed and amended, both lines stay.
+  That is the whole point: a later reader — human or model — can see which model
+  produced the original reasoning and which one revised it.
+- **Never drop an earlier agent's trailer when amending.** The trailer records
+  participation, not the largest share.
+- Attribution is not certification. The operator remains the commit author and
+  is responsible for having reviewed what the agent produced.
+
+**Patches are not commits.** Shipped `.patch` files carry their own headers
+and their own rules — including the hard rule that a `Backport` patch's header
+is never touched. See `.claude/rules/recipe-conventions.md` §"AI attribution in
+patch headers" before adding a trailer to anything under `files/`.
+
+Rationale: this repo previously banned trailers. That was reversed because
+provenance turned out to matter more than terse messages — commits originate
+from several tools (Claude Code, Codex), and knowing which model reasoned about
+a change is what makes a later review of it auditable.
+
+## Validating behaviour changes
+
+A green build and an approving review are not evidence. Both are produced by
+reasoning over the same artifact with the same blind spots — an agent reviewing an
+agent's change converges on *plausible*, not *correct*. Before claiming a change is
+right, produce a check whose answer comes from something other than a model.
+
+Applies to any change that decides something about real inputs:
+
+- matching, filtering or classifying logic — parsers, regexes, globs, version
+  comparisons, dedupe/merge rules
+- security metadata that suppresses findings — `CVE_STATUS` dispositions, VEX
+  claims, exclusion lists. These fail **silently**: a wrong entry removes a CVE from
+  the report instead of turning something red, and downstream tooling that trusts
+  `CVE_STATUS` inherits the mistake.
+- anything whose failure mode is "the output looks fine but something is missing"
+
+Ranked by what the evidence is worth:
+
+1. **Differential run** — keep the old behaviour beside the new, run both over real
+   data, diff the outputs. Every disagreement is a change you must be able to
+   explain. Check **both** directions: what stopped matching, and what started.
+2. **Per-claim verification against an independent source** — for metadata
+   dispositions, check each claim (shipped version vs fixed boundary, product
+   mismatch) against upstream CVE data, *not* against the scanner that produced the
+   finding. Scope rules for authoring those claims: `docs/SBOM_CVE.md`.
+3. **On-target validation** — for runtime behaviour the board is the oracle.
+4. A build, lint run, or test suite — necessary, but only covers what someone
+   already thought of.
+
+What makes it actually work:
+
+- **Classify the whole delta, not the top N.** The tail is where the wrong ones hide.
+- **Isolate the variable** — set local changes aside and re-measure the raw baseline
+  first, so the delta is attributable to the change and not to image drift.
+- **State which axis is clean** when the underlying data drifts, rather than quoting
+  a total that mixes signal with feed noise.
+- **Keep the commands re-runnable** and logged next to the work, so the numbers can
+  be reproduced instead of believed.
+- **Put the result in the commit body** — what was run, what it showed. When a claim
+  could not be verified, say so plainly. "Unverified" is a valid state; a confident
+  sentence covering for one is not.
 
 ## Working economically
 

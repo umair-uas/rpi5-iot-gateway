@@ -1,389 +1,247 @@
 ---
 name: devtool-workflow
-description: "Modify, build, and upstream patches for any Yocto recipe using devtool. Use when iterating on a recipe's source (BSP, kernel, U-Boot, app) without editing the recipe directly. Covers the full cycle: modify, build, commit, finish, verify."
+description: "Modify, build, and export patches for a recipe in meta-iot-gateway using devtool. Use when iterating on recipe source (U-Boot, kernel, app) instead of hand-editing patch files. Covers modify, build, commit, finish, and patch verification on Yocto 6.0 wrynose."
 metadata:
-  argument-hint: "<recipe-name> [modify|build|finish|reset|deploy]"
-allowed-tools: "Read, Edit, Grep, Glob, Bash(kas *), Bash(bitbake*), Bash(devtool *), Bash(git *), Bash(cd *), Bash(find *), Bash(ls *)"
+  argument-hint: "<recipe-name> [modify|build|finish|reset]"
+allowed-tools: "Read, Edit, Grep, Glob, Bash(. scripts/env.sh*), Bash(kas *), Bash(bitbake*), Bash(devtool *), Bash(git *), Bash(make *), Bash(find *), Bash(ls *)"
 ---
 
-# devtool Workflow
+# devtool workflow (rpi5-iot-gw)
 
-## Context
+Read `.claude/rules/recipe-conventions.md` first — patch identity,
+`Upstream-Status` taxonomy, and the sstate patch-header rebuild cost all
+apply to every patch this workflow emits.
 
-- KAS configs: !`ls kas/*.yml 2>/dev/null`
-- Custom layers: !`find . -maxdepth 1 -name "meta-*" -type d 2>/dev/null`
-- Workspace status: !`test -d build/workspace && kas shell kas/local.yml -c "devtool status" 2>/dev/null || echo "no active workspace"`
+## Wrynose changed how devtool handles local files
 
----
+**`oe-local-files` no longer exists.** It was removed upstream in
+OE-Core `ce8190c5190` ("devtool: Drop oe-local-files and simplify",
+2024-05-01) — after scarthgap, so it is gone in wrynose. Guidance
+written for scarthgap or earlier (including older versions of this
+skill) is wrong on this point.
 
-## How devtool Works (Read This First)
+Do **not** look for `build/workspace/sources/<recipe>/oe-local-files/`.
+It is never created. Its absence means nothing and destroys nothing.
+The old "devtool reads that directory as the file list, so an absent
+directory means delete them from the layer" failure mode disappeared
+with the `_ls_tree` code path that caused it.
 
-`devtool modify` creates a workspace layer at `build/workspace/` containing:
+What `devtool finish` does now (`_export_local_files` in
+`scripts/lib/devtool/standard.py`):
 
-```
-build/workspace/
-  sources/<recipe>/     ← git repo: upstream source + project patches as commits
-  appends/<recipe>.bbappend  ← wires externalsrc to the workspace source
-  recipes/              ← (used by devtool add, not modify)
-  attic/                ← preserved source if devtool reset detects modifications
-```
+- **Committed** changes in the workspace source tree → extracted as
+  numbered `.patch` files into the layer.
+- **Uncommitted but tracked** changes (literally `git status
+  --porcelain`, untracked `??` entries excluded) → classified against
+  the recipe's non-patch `file://` list and copied directly over the
+  files in recipe space.
 
-The default development branch inside `build/workspace/sources/<recipe>/` is
-`devtool` (unless `devtool modify --branch <name>` is used). Keep all project
-work on the branch used for the modify session.
-`devtool finish` applies committed source-tree changes back to metadata in the
-destination layer (roughly `update-recipe` + `reset`). In patch mode, this
-typically means numbered patch files and recipe/append `SRC_URI` updates.
+For BSP recipes here (`u-boot`, `linux-iotgw-mainline-fit`) the
+workspace source tree is the upstream git checkout. Your layer's `.cfg`
+fragments unpack to `UNPACKDIR`, not into that tree, so devtool neither
+sees nor rewrites them — **edit fragments directly in the layer**. That
+makes "commit everything before finishing" the right habit here, but for
+a plain reason: uncommitted work does not become a patch.
 
----
+## 1. Enter the build environment
 
-## Project Guardrails (Stricter Than Upstream Docs)
-
-These are team safety rules for predictable patch generation. Upstream Yocto
-docs do not require all of them, but following them avoids common failures.
-
-1. **Always verify branch before any git operation:**
-   ```bash
-   git branch   # must show your modify branch (default: * devtool)
-   ```
-   If not on the intended branch, checkout that branch before proceeding.
-
-2. **Never use `git commit --amend` in a devtool workspace.**
-   Amend on the `devtool` branch rewrites the base commit boundary. Amend on
-   `master` or any other branch contaminates upstream content into your diff.
-   Neither is recoverable without a full `devtool reset`.
-
-3. **Never use `git format-patch` manually.**
-   Always use `devtool finish` to extract patches back to the layer. Manual
-   `format-patch` bypasses devtool's patch numbering, layer wiring, and
-   SRC_URI management.
-
-4. **Do not cherry-pick or rebase in the workspace in this project.**
-   If commit restructuring is required, prefer `devtool reset` and re-apply
-   changes cleanly on the active modify branch.
-
-5. **Verify patch content after every `devtool finish`.**
-   See step 6a below. Do not rebuild or commit to the layer until verified.
-
----
-
-## 1. Enter Build Environment
+There is no `make shell` target in this repo. A bare `kas shell` sets
+`KAS_WORK_DIR = CWD` and re-clones the whole upstream layer stack into
+the repo root (AGENTS.md, "Standalone `kas` invocations"). Agent shells
+do not get direnv. Always source the env in the same command:
 
 ```bash
-kas shell kas/<config>.yml
+. scripts/env.sh && kas shell kas/local.yml
 ```
 
----
+`kas/local.yml` is the Makefile's `BASE` when present; it falls back to
+`kas/rauc.yml`.
 
-## 2. Check Workspace State
+**U-Boot has a hard signing gate.** `iotgw-fit-signing-guard.bbclass`
+fails `u-boot:do_configure` unless an operator signing key is configured
+in `kas/local.yml`. `devtool build u-boot` hits this. If you only need
+metadata, `make parse` and `bitbake -e` are not blocked.
 
-Always check before starting. Avoid conflicts with existing workspace entries.
+## 2. Check workspace state
 
 ```bash
 devtool status
+devtool reset <recipe>    # only if you want a clean start
 ```
 
-If recipe is already in workspace and you want a clean start:
+## 3. Modify
+
+Conditional `SRC_URI` operations break override-branch handling. Check
+first:
 
 ```bash
-devtool reset <recipe>   # source preserved in attic unless modified
+bitbake-getvar -r <recipe> SRC_URI | grep -E '(:append:|:prepend:|:remove:)' || true
 ```
 
----
-
-## 3. Check Out Recipe for Editing
-
-Detect whether recipe metadata uses conditional `SRC_URI` operations (which can
-break `devtool modify` override-branch handling):
+If any are present, or a previous `devtool modify` complained about
+override branches:
 
 ```bash
-bitbake-getvar -r <recipe> SRC_URI 2>/dev/null | grep -E "(:append:|:prepend:|:remove:)" || true
+devtool modify --no-overrides <recipe>     # -O
 ```
 
-If conditionals are present (or if previous `devtool modify` failed with
-override-branch messages), use:
+Otherwise `devtool modify <recipe>`.
 
-```bash
-devtool modify --no-overrides <recipe>
-```
+This is not cosmetic: `_export_local_files` returns empty on any
+override branch, so finishing from one silently exports nothing.
 
-Otherwise use:
-
-```bash
-devtool modify <recipe>
-```
-
-- Downloads and unpacks upstream source into `build/workspace/sources/<recipe>/`
-- Applies existing recipe patches as commits on top of upstream
-- Creates a working branch (default name: `devtool`; configurable with `--branch`)
-- Wires `externalsrc` bbappend automatically
-
-**Non-patch `file://` entries and `oe-local-files`:**
-When `devtool modify` runs, non-patch `file://` SRC_URI entries (`.cfg` fragments,
-`fw_env.config`, scripts — anything that is not `.patch` or `.diff`) are copied to
-an `oe-local-files/` subdirectory under the workspace source tree. If this directory
-does not exist when `devtool finish` runs, devtool interprets its absence as
-intentional deletion and removes those files from the layer. Always verify it is
-populated before finishing.
-
-```bash
-ls build/workspace/sources/<recipe>/oe-local-files/
-# Must list your .cfg fragments, fw_env.config, etc. before devtool finish
-```
-
-Force-disable override branch generation explicitly when needed:
-
-```bash
-devtool modify --no-overrides <recipe>
-```
-
-Immediately after `devtool modify`, verify branch state:
+Verify immediately:
 
 ```bash
 cd build/workspace/sources/<recipe>
-git branch          # must show: * devtool
-git log --oneline   # verify: upstream base + existing patches visible as commits
+git branch          # must show: * devtool  (or your --branch name)
+git log --oneline   # upstream base + existing layer patches as commits
 ```
-If you used `--branch <name>`, replace `devtool` with that branch name in all
-checks below.
 
----
-
-## 4. Build Modified Recipe
+## 4. Build
 
 ```bash
 devtool build <recipe>
 ```
 
-For a full image rebuild:
+Full image rebuild goes through the Makefile, not raw bitbake:
 
 ```bash
-bitbake <image-name>
+make dev      # or base | prod
 ```
 
-Optional — deploy directly to a running target for fast iteration:
-
-```bash
-devtool deploy-target <recipe> root@<target-ip>
-# Undo:
-devtool undeploy-target <recipe> root@<target-ip>
-```
-
----
-
-## 5. Make and Commit Changes
-
-**Before touching any file:**
+## 5. Edit and commit
 
 ```bash
 cd build/workspace/sources/<recipe>
-git branch          # MUST show your active modify branch — stop if it does not
+git branch                  # confirm before every commit
+git add -p
+git commit -m "component: what and why"
 ```
 
-Make your changes, then commit:
+- One logical change per commit — `devtool finish` emits one numbered
+  patch per commit.
+- The commit body becomes the patch header. Write the *why* there; it
+  has to satisfy the `Upstream-Status` rules in
+  `.claude/rules/recipe-conventions.md`.
+- Never `git commit --amend` here — it moves the commit boundary devtool
+  uses to decide what becomes a patch.
+- Never `git format-patch` by hand — it bypasses numbering and
+  `SRC_URI` wiring.
+
+## 6. Finish
 
 ```bash
-git add -p          # stage changes selectively
-git commit -m "component: describe what and why"
+devtool finish <recipe> meta-iot-gateway/
 ```
 
-Commit message conventions:
-- One logical change per commit
-- Subject line: `component: short description` (e.g. `defconfig: disable redundant env`)
-- Body: explain *why*, not just *what* — this becomes the patch header
+Writes patches to the layer, updates `SRC_URI` in the recipe or
+bbappend, removes the workspace bbappend, and resets the workspace
+entry.
 
-**Multiple commits are fine and preferred over one large commit.**
-`devtool finish` produces one numbered patch file per commit.
+Destinations in this layer:
 
-**Uncommitted changes are silently dropped by `devtool finish`.** Commit everything.
+| Recipe | Patches land in |
+|---|---|
+| `u-boot` | `meta-iot-gateway/recipes-bsp/u-boot/files/` |
+| `linux-iotgw-mainline-fit` | `meta-iot-gateway/recipes-kernel/linux/files/` |
 
----
+Kernel config fragments live in
+`meta-iot-gateway/recipes-kernel/linux/files/fragments/` and are edited
+in the layer directly — not through devtool.
 
-## 6. Finish — Write Patches Back to Layer
+## 6a. Verify the generated patches (mandatory)
 
-Identify the target layer path first, then:
+Do not rebuild or commit the layer until these pass.
 
 ```bash
-devtool finish <recipe> <path-to-layer>
-# Example:
-devtool finish u-boot meta-iot-gateway/
+L=meta-iot-gateway/recipes-bsp/u-boot/files      # adjust per recipe
+
+# Only expected files touched in the layer
+git status --short $L
+
+# Each patch touches only intended files (u-boot defconfig example)
+grep '^---\|^+++' $L/00*.patch | grep -v 'configs/rpi_arm64_defconfig\|/dev/null'
+# Expected: empty. Non-empty means the patch is contaminated.
+
+# No upstream release artifacts crept in
+grep -lE 'Makefile|CHANGELOG|release notes' $L/00*.patch
+# Expected: no output.
+
+# Patch count matches commit count
+ls $L/00*.patch | wc -l
+git -C build/workspace/sources/<recipe> log --oneline devtool ^devtool-base | wc -l
 ```
 
-`devtool finish`:
-- Pushes committed changes from the source tree back to metadata in destination layer
-- In patch mode, converts commit deltas to numbered `.patch` files
-- Updates recipe or bbappend metadata (typically `SRC_URI`) as needed
-- Removes the workspace bbappend
-- Resets the workspace entry
+If any check fails: `devtool reset <recipe>`, `devtool modify
+<recipe>`, re-apply cleanly, finish, re-verify.
 
----
+Every emitted patch needs an `Upstream-Status:` header before it builds
+— and note from `.claude/rules/recipe-conventions.md` that editing a
+patch header alone invalidates sstate and reruns
+`do_patch → do_compile → do_install → do_deploy`. Batch header edits
+before kicking off a build.
 
-## 6a. Verify Generated Patches (Mandatory)
-
-**Always run these checks before rebuilding or committing the layer.**
-
-```bash
-# 1. Confirm only expected files were touched in the layer
-git diff --name-only <layer>/recipes-<category>/<recipe>/files/
-
-# 2. Confirm each patch touches only intended files
-#    For a defconfig patch: only configs/<defconfig> should appear
-grep "^---\|^+++" <layer>/recipes-<category>/<recipe>/files/00*.patch \
-  | grep -v "configs/rpi_arm64_defconfig\|/dev/null"
-# Expected: empty — if non-empty, patch is contaminated with wrong files
-
-# 3. Confirm no upstream release artifacts crept in
-grep -lE "Makefile|CHANGELOG|statistics|release notes" \
-  <layer>/recipes-<category>/<recipe>/files/00*.patch
-# Expected: no output
-
-# 4. Confirm patch count matches your commit count
-ls <layer>/recipes-<category>/<recipe>/files/00*.patch | wc -l
-# Compare against: git log --oneline <work-branch> ^<upstream-base> | wc -l
-```
-
-If any check fails:
-
-```bash
-devtool reset <recipe>
-devtool modify <recipe>
-# Re-verify branch, re-apply changes cleanly on devtool branch
-devtool finish <recipe> <layer-path>
-# Re-run verification
-```
-
----
-
-## 7. Reset Without Finishing
+## 7. Reset
 
 ```bash
 devtool reset <recipe>
 ```
 
-- Workspace bbappend removed; recipe build returns to layer version
-- By default, source tree is left in place under `build/workspace/sources/<recipe>/`
-- With `devtool reset -r` / `devtool finish -r`, source cleanup is requested; if
-  modified, devtool may preserve source in `build/workspace/attic/sources/<recipe>.<timestamp>/`
-- To reuse attic source: `devtool modify <recipe> <path-to-attic-source>`
-- Delete attic manually when no longer needed
+Workspace bbappend removed; the layer recipe takes over again. Source is
+left in place under `build/workspace/sources/<recipe>/`. With `-r`,
+devtool may preserve a modified tree under
+`build/workspace/attic/sources/<recipe>.<timestamp>/`; reuse it with
+`devtool modify <recipe> <attic-path>` or delete it manually.
 
----
+## Defconfig workflow (U-Boot)
 
-## Defconfig Workflow (U-Boot / Kernel)
-
-When the change involves Kconfig (defconfig patches), the workflow has an extra
-step to ensure Kconfig dependency resolution is captured correctly.
+Kconfig dependency resolution means the effective config delta is larger
+than a raw fragment declares. Capture the resolved truth:
 
 ```bash
-# After devtool modify, inside workspace source directory:
-git branch          # verify active modify branch (default: * devtool)
+cd build/workspace/sources/u-boot
+git branch                       # confirm first
 
-# Generate baseline defconfig
-make <board>_defconfig
+make rpi_arm64_defconfig
 make savedefconfig
 cp defconfig defconfig.upstream
 
-# Merge project fragments
-scripts/kconfig/merge_config.sh .config /path/to/project-fragment.cfg
-# Review merge output — "value redefined" warnings are expected for
-# options already resolved by upstream Kconfig dependency logic
+scripts/kconfig/merge_config.sh .config \
+  <repo>/meta-iot-gateway/recipes-bsp/u-boot/files/iotgw-uboot.cfg
+# "value redefined" warnings are expected — upstream Kconfig already
+# resolved those symbols.
 
-# Capture resolved config
 make savedefconfig
+grep -c CONFIG_OPTION_YOU_EXPECT defconfig
 
-# Verify expected options
-grep -c "OPTION_YOU_EXPECT" defconfig
-
-# Commit ONLY the defconfig file — not .config, not upstream files
-git add configs/<board>_defconfig
-git branch          # verify active modify branch — one last check before commit
-git commit -m "defconfig: apply <project> base hardening"
-
-# Proceed to devtool finish + 6a verification
+git add configs/rpi_arm64_defconfig      # ONLY this file
+git commit -m "defconfig: apply iotgw base hardening"
 ```
 
-**Why savedefconfig instead of a raw fragment?**
-Kconfig dependency resolution causes implicit options to appear or disappear
-when explicit options change. A `savedefconfig` patch captures the fully-resolved
-truth. Raw fragments are fragile — the effective config delta is larger than the
-fragment declares, and silent regressions are possible on U-Boot version bumps.
+Then finish + 6a. The existing `0003-defconfig-iotgw-base.patch` was
+produced this way; regenerate it the same way on a U-Boot version bump
+rather than rebasing hunks by hand.
 
-Add a regeneration comment at the top of defconfig patches:
+Head the patch with its regeneration recipe:
 
 ```
-# Generated by savedefconfig against <recipe> <version/commit>.
-# Regenerate on version bump:
-#   devtool modify <recipe> → make <board>_defconfig →
-#   merge_config.sh + project fragments → make savedefconfig →
-#   devtool finish
+# Generated by savedefconfig against u-boot <version>.
+# Regenerate on version bump: devtool modify u-boot →
+#   make rpi_arm64_defconfig → merge_config.sh + iotgw-uboot*.cfg →
+#   make savedefconfig → devtool finish
 ```
 
----
+## Pitfalls
 
-## Recovery Procedures
-
-### Wrong branch commit
-
-Symptom: committed on `master` or non-work branch.
-
-```bash
-git log --oneline master | head -5   # check if your commit is on master
-git log --oneline <work-branch> | head -5  # check intended branch state
-
-# If work branch is clean and master has the wrong commit:
-git checkout master
-git revert HEAD --no-edit           # or git reset HEAD~1 if not yet pushed
-
-# Re-apply changes on intended work branch:
-git checkout <work-branch>
-# Re-make and re-commit changes
-```
-
-If in doubt, reset entirely:
-
-```bash
-devtool reset <recipe>
-devtool modify <recipe>
-# Start from step 5 with clean devtool branch
-```
-
-### Contaminated patch after devtool finish
-
-Symptom: patch contains Makefile, CHANGELOG, release notes, or other upstream files.
-
-```bash
-# Do not rebuild. Do not commit the layer.
-devtool reset <recipe>
-devtool modify <recipe>
-git branch   # verify active modify branch
-# Re-apply ONLY your intended changes as new commits
-devtool finish <recipe> <layer-path>
-# Run 6a verification before proceeding
-```
-
-### devtool finish fails — layer path issues
-
-```bash
-devtool finish <recipe> <layer-path> --no-clean   # preserve workspace on failure
-# Check: layer path exists and is writable
-ls -la <layer-path>/recipes-<category>/<recipe>/
-```
-
----
-
-## Common Pitfalls
-
-- **Wrong branch commits**: Always `git branch` before `git add`. Committing on
-  the wrong branch risks unintended patch content; recover by reverting and
-  recommitting on the active modify branch, or reset/restart.
-- **`git commit --amend` in workspace**: Rewrites the commit boundary devtool uses
-  to determine which commits become patches. Project rule: avoid amend here.
-- **`git format-patch` instead of `devtool finish`**: Bypasses patch numbering and
-  recipe/bbappend updates. Always use `devtool finish` / `devtool update-recipe`.
-- **Uncommitted changes**: `devtool finish` silently drops them. Always commit first.
-- **`AUTOREV` recipes**: Pin `SRCREV` explicitly after finishing.
-- **"already in your workspace" error**: Run `devtool reset <recipe>` first.
-- **Defconfig patches that include wrong files**: Always run 6a verification.
-  Rebuild only after verification passes.
-- **Version bump breaks defconfig patch**: Regenerate via the defconfig workflow
-  above against the new version. Do not attempt to manually rebase patch hunks.
+- **Wrong branch** — `git branch` before every `git add`. Committing on
+  `master` puts upstream content in your diff.
+- **Override branch** — finishing from one exports nothing at all. Use
+  `--no-overrides` when `SRC_URI` has conditional operations.
+- **Uncommitted work** — does not become a patch.
+- **`AUTOREV` recipes** — pin `SRCREV` explicitly after finishing.
+- **"already in your workspace"** — `devtool reset <recipe>` first.
+- **U-Boot build fails at `do_configure`** — that is the FIT signing
+  guard, not your patch. Configure a key in `kas/local.yml`.
+- **Version bump breaks a defconfig patch** — regenerate via the
+  defconfig workflow. Do not rebase hunks manually.

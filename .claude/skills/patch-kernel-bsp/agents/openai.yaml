@@ -1,4 +1,0 @@
-interface:
-  display_name: "Patch Kernel BSP"
-  short_description: "Patch Linux kernel recipes and layer files for BSP"
-  default_prompt: "Use $patch-kernel-bsp to create and wire a kernel patch in the Yocto BSP layer."

@@ -18,6 +18,40 @@ author attribution; placeholder `From:` values or all-zero `From <SHA>`
 lines mean the patch is project-authored and the maintainer identity
 applies.
 
+### AI attribution in patch headers
+
+Same trailer as commits (`AGENTS.md` §"AI attribution in commits"):
+`Assisted-by: <tool>:<model-id>`, one line per model that touched the
+patch, immediately **above** the `Signed-off-by:` line:
+
+```
+Upstream-Status: Inappropriate [product specific - appliance watchdog policy]
+Assisted-by: <tool>:<model-id>
+Signed-off-by: Maintainer Name <maintainer@example.invalid>
+```
+
+Never copy a model id out of a doc or an existing patch — state the
+model actually running. Policy applies to patches written or modified
+from 2026-08-02 onward; existing patches are not retrofitted, because
+reconstructing which model wrote them from memory would fabricate the
+audit trail the trailer exists to provide.
+
+Which patches it applies to depends on the `Upstream-Status` tag:
+
+| Status | AI trailer |
+|---|---|
+| `Inappropriate [oe specific]`, `Inappropriate [product specific — ...]` | Yes. Never leaves the repo; our rules are the only rules. |
+| `Pending`, `Submitted [<where>]` | Yes here — but the receiving project's trailer rules win at submission time. `Assisted-by:` is not part of the kernel/U-Boot canonical trailer set; check that project's current contribution docs before sending, and be ready to drop it. |
+| `Backport [...]` (both verbatim and adapted) | **No — do not touch the header.** The commit message and its `Signed-off-by:` chain belong to the original author (e.g. the rpi RTC driver patch carries popcornmix' and Jonathan Bell's sign-offs). Only the `Upstream-Status:` line is ours to add. Adding our trailers misattributes their work and destroys the verbatim-cherry-pick property. |
+
+`Signed-off-by:` stays last and stays a **human**. Attribution records
+who helped write the patch; the DCO sign-off certifies who takes
+responsibility for it. An `Assisted-by:` line never substitutes for a
+sign-off, and an agent never adds a sign-off on the operator's behalf.
+
+Retrofitting is also expensive, not just dishonest — see §"sstate
+gotcha: patch-header edits trigger full rebuilds".
+
 ## `/root` install paths
 
 General rule (use `${bindir}`, `${sysconfdir}`, etc.) follows upstream.

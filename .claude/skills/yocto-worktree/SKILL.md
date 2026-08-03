@@ -7,12 +7,8 @@ allowed-tools: "Read, Grep, Glob, Bash(git *), Bash(cp *), Bash(ls *), Bash(test
 
 # Isolated Yocto worktrees (subagents & parallel sessions)
 
-## Context
-
-- Active worktrees: !`git worktree list 2>/dev/null`
-- Local kas overlay: !`test -f kas/local.yml && echo "kas/local.yml present" || echo "kas/local.yml MISSING — builds will not use the shared cache"`
-
----
+Orient with `git worktree list` and `test -f kas/local.yml` before
+acting — the seeding step below depends on both.
 
 ## When to use a worktree (and when not)
 

@@ -1,7 +1,7 @@
 .PHONY: help base dev prod \
         bundle-dev-full-fit sign-bootfiles-fit-yk sign-bootfiles-fit-softhsm bundle-dev-full-fit-resign bundle-prod-full-fit bundle-prod-full-fit-resign \
         tools-venv test-sign-fit test-sign-fit-softhsm test-sbom-cve \
-        sbom-cve cve-report sbom-report layers parse clean-lock
+        sbom-cve cve-report sbom-report layers parse clean-lock hooks
 
 KAS ?= kas
 
@@ -72,6 +72,7 @@ help:
 	@echo "  make sbom-report                  # Summarise the SBOM (license inventory + HIGH-risk review)"
 	@echo "  make test-sbom-cve                # Run sbom-cve report/cohort tests (fixtures, no build)"
 	@echo "  -- Utilities --"
+	@echo "  make hooks                        # Enable the repo git hooks (run once per clone)"
 	@echo "  make layers                       # Show layers for RAUC stack"
 	@echo "  make parse                        # Parse-only for RAUC stack"
 	@echo "  make clean-lock                   # Remove stale bitbake.lock"
@@ -231,3 +232,12 @@ parse: | $(KAS_WORK_DIR)
 
 clean-lock:
 	rm -f build/bitbake.lock
+
+# The hooks live in scripts/hooks (tracked), but core.hooksPath is per-clone
+# local config — a fresh clone has the private-key guard and the commit-msg
+# check silently disabled until this runs. Idempotent.
+hooks:
+	@git config core.hooksPath scripts/hooks
+	@echo "core.hooksPath -> scripts/hooks"
+	@echo "  pre-commit  : refuse staged private-key / keys/ material"
+	@echo "  commit-msg  : enforce the Conventional Commit subject (AGENTS.md)"
