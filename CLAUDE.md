@@ -28,6 +28,8 @@ read those instead.
 
 Delegate build-running or build-polluting tasks to subagents with `isolation: worktree`, and follow the `yocto-worktree` skill for seeding, coordination, and cleanup. Recipe/patch conventions live in `.claude/rules/recipe-conventions.md` (auto-loaded as a rule; also route subagents there explicitly).
 
+Before starting build-running/build-polluting work or a substantial multi-file change yourself (not just when spawning a subagent), run `git status` first. If unrelated uncommitted changes from a different thread are already sitting in the tree, don't silently add to them — flag it and ask whether the new work should go in its own worktree instead. Skip this for minimal/single-file changes; bundle those per the normal PR-scope convention (`AGENTS.md` §Conventions).
+
 ## Commit trailers
 
 The canonical rule is `AGENTS.md` §"AI attribution in commits": an
