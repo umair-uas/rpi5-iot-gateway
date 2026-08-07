@@ -27,6 +27,8 @@ SRC_URI:append = " \
     file://overlay-reconcile.py \
     file://99-iotgw-rauc-slots.rules \
     file://rauc-tpm2-pkcs11-store.service.conf \
+    file://de.pengutronix.rauc-iotgw.conf \
+    file://rauc-hardening.service.conf \
 "
 
 IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE ?= "file"
@@ -76,6 +78,22 @@ do_install:append() {
     install -m 0644 ${UNPACKDIR}/99-iotgw-rauc-slots.rules \
         ${D}${sysconfdir}/udev/rules.d/99-iotgw-rauc-slots.rules
 
+    # Restrict who may call the root RAUC service over D-Bus. meta-rauc's own
+    # policy grants send_destination to context="default" - i.e. every local
+    # process - to a root, unsandboxed installer. /etc/dbus-1/system.d is
+    # included AFTER /usr/share/dbus-1/system.d by system.conf, so this file's
+    # explicit <deny> revokes that grant. See the file header for why a
+    # same-named replacement would NOT have worked.
+    install -d ${D}${sysconfdir}/dbus-1/system.d
+    install -m 0644 ${UNPACKDIR}/de.pengutronix.rauc-iotgw.conf \
+        ${D}${sysconfdir}/dbus-1/system.d/de.pengutronix.rauc-iotgw.conf
+
+    # Conservative unit sandboxing. Numbered above the TPM drop-in so ordering
+    # is explicit rather than incidental.
+    install -d ${D}${sysconfdir}/systemd/system/rauc.service.d
+    install -m 0644 ${UNPACKDIR}/rauc-hardening.service.conf \
+        ${D}${sysconfdir}/systemd/system/rauc.service.d/20-iotgw-hardening.conf
+
     if ${@bb.utils.contains('IOTGW_RAUC_PKCS11_USES_TPM2', '1', 'true', 'false', d)}; then
         install -d ${D}${sysconfdir}/systemd/system/rauc.service.d
         sed -e "s|@IOTGW_TPM2_PKCS11_STORE@|${IOTGW_TPM2_PKCS11_STORE}|g" \
@@ -91,6 +109,9 @@ do_install:append() {
 FILES:rauc-grow-data-part:append = " ${sbindir}/grow-data-partition.sh"
 FILES:${PN}-service:append = " ${datadir}/iotgw/overlay-reconcile/managed-paths.conf ${datadir}/iotgw/overlay-reconcile/managed-paths.d/network.conf ${datadir}/iotgw/overlay-reconcile/managed-paths.d/observability.conf ${libexecdir}/rauc/overlay-reconcile.py"
 FILES:${PN}:append = " ${sysconfdir}/udev/rules.d/99-iotgw-rauc-slots.rules"
+FILES:${PN}-service:append = " ${sysconfdir}/dbus-1/system.d/de.pengutronix.rauc-iotgw.conf \
+                               ${sysconfdir}/systemd/system/rauc.service.d/20-iotgw-hardening.conf \
+                             "
 FILES:${PN}-service:append = "${@bb.utils.contains('IOTGW_RAUC_PKCS11_USES_TPM2', '1', ' ${sysconfdir}/systemd/system/rauc.service.d/10-tpm2-pkcs11-store.conf', '', d)}"
 RDEPENDS:${PN}-service:append = " python3-core"
 RDEPENDS:${PN}-service:append = "${@bb.utils.contains('IOTGW_RAUC_STREAMING_KEY_MODE_EFFECTIVE', 'pkcs11', ' openssl-engines libp11', '', d)}"

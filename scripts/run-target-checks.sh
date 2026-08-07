@@ -16,8 +16,13 @@
 #   scripts/run-target-checks.sh --list
 #
 # With no check names, runs the default smoke set (ota-fit-slot ota-smoke
-# container-smoke). ota-bench is excluded from the default set (it is a
-# benchmark, not a pass/fail check) but can be named explicitly.
+# container-smoke exposure). ota-bench is excluded from the default set (it is
+# a benchmark, not a pass/fail check) but can be named explicitly.
+#
+# The "exposure" check asserts listen scope, address family, and firewall
+# qualification. It cannot test off-device reachability - a device cannot prove
+# its own; pair it with scripts/security/exposure-probe-host.sh from a second
+# host.
 #
 # Environment overrides:
 #   IOTGW_TARGET     device host/IP (used if no positional host is given)
@@ -39,11 +44,12 @@ check_path() {
         ota-smoke)       echo "ota/ota-smoke-target.sh" ;;
         container-smoke) echo "container/container-smoke-target.sh" ;;
         ota-bench)       echo "ota/ota-bench-target.sh" ;;
+        exposure)        echo "security/exposure-target.sh" ;;
         *)               return 1 ;;
     esac
 }
-ALL_CHECKS="ota-fit-slot ota-smoke container-smoke ota-bench"
-DEFAULT_CHECKS="ota-fit-slot ota-smoke container-smoke"
+ALL_CHECKS="ota-fit-slot ota-smoke container-smoke ota-bench exposure"
+DEFAULT_CHECKS="ota-fit-slot ota-smoke container-smoke exposure"
 
 usage() {
     sed -nE 's/^# ?//p' "${BASH_SOURCE[0]}" | sed -n '1,33p'

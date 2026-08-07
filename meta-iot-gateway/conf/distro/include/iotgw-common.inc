@@ -188,6 +188,21 @@ ROOT_HOME ?= "/root"
 # so overriding it in kas/local.yml keeps hardening + OTA management aligned.
 IOTGW_WIFI_IFACE ?= "wlan0"
 
+# Network-listening systemd socket units permitted in the image, as
+# "<unit>=<address>" pairs. Enforced by iotgw-listen-guard.bbclass at rootfs
+# assembly, by EXACT SET EQUALITY — so a listener that appears AND one that
+# silently disappears both fail the build.
+#
+# sshd is pinned to IPv4 because upstream's sshd.socket ships a bare
+# "ListenStream=22", which systemd binds dual-stack; with a global IPv6 address
+# on any interface that makes SSH reachable off-link with no NAT in the path.
+# The pin lives in recipes-connectivity/openssh/files/sshd.socket-iotgw.conf and
+# rides inside openssh-sshd so no image can install sshd without it.
+#
+# Only covers socket-ACTIVATED units. A daemon that binds its own socket
+# directly is asserted at runtime instead, by an on-target check.
+IOTGW_NET_LISTEN_ALLOW ?= "sshd.socket=0.0.0.0:22"
+
 # Allow injecting Wi-Fi credentials from the shell environment without committing them
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_WIFI_IFACE IOTGW_ENABLE_OTBR"

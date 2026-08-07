@@ -45,6 +45,42 @@ jobs:
           fi
           shellcheck -S warning "${scripts[@]}"
 
+      - name: nftables rules name an address family
+        run: |
+          # In a "table inet", a rule naming a port with no family match admits
+          # it on IPv4 AND IPv6 alike. That is how SSH became reachable over a
+          # global IPv6 address: the ruleset family-qualified ICMP but not the
+          # service ports, and nothing checked.
+          #
+          # This lint only works because the OTBR rules live in their own .conf
+          # file. They were previously embedded as text inside a sed script in
+          # iotgw-firewall.bb, invisible to any grep over *.conf — so a check
+          # like this would have passed while the branch that actually shipped
+          # carried unqualified rules.
+          mapfile -t rulesets < <(git ls-files '*/nftables*.conf')
+          if [[ ${#rulesets[@]} -eq 0 ]]; then
+            echo "no tracked nftables rulesets found"
+            exit 0
+          fi
+          # Matches tcp/udp dport ANYWHERE on a rule line (not just as the
+          # first token, so "ct state new tcp dport 22 accept" is caught
+          # too). Comments are stripped before matching, both whole-line and
+          # trailing, so a rule cannot evade on the strength of its own
+          # comment, and a rule already constrained by "meta nfproto", "ip",
+          # or "ip6" is accepted.
+          rc=0
+          for f in "${rulesets[@]}"; do
+            bad=$(sed -E 's/#.*$//' "$f" \
+              | grep -nE '\b(tcp|udp)[[:space:]]+dport\b' \
+              | grep -vE '\bmeta[[:space:]]+nfproto\b|\bip6?\b') || true
+            if [[ -n "$bad" ]]; then
+              echo "$bad"
+              echo "::error file=$f::port rule with no address family (add 'meta nfproto ipv4'/'ipv6')"
+              rc=1
+            fi
+          done
+          exit $rc
+
       - name: Install yamllint
         run: pip install --quiet yamllint==1.35.1
 
