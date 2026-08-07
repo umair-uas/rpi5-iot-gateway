@@ -1,7 +1,7 @@
 ## Common base include for IoT Gateway images (RPi5)
 
 # Core inheritance shared by all image variants
-inherit core-image iotgw-rootfs extrausers
+inherit core-image iotgw-rootfs iotgw-listen-guard extrausers
 inherit iotgw-rauc-image
 
 # Label the rootfs with SELinux file contexts at do_rootfs (runs setfiles
