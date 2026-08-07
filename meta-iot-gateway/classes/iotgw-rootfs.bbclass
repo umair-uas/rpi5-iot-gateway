@@ -247,8 +247,9 @@ python () {
 
 iotgw_rootfs_supplementary_groups() {
     local group_file="${IMAGE_ROOTFS}${sysconfdir}/group"
+    local gshadow_file="${IMAGE_ROOTFS}${sysconfdir}/gshadow"
     local passwd_file="${IMAGE_ROOTFS}${sysconfdir}/passwd"
-    local pair user group tmp
+    local pair user group tmp target
 
     [ -z "${IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS}" ] && return 0
 
@@ -263,21 +264,48 @@ iotgw_rootfs_supplementary_groups() {
             bbfatal "iotgw-supplementary-group: group '${group}' missing from rootfs ${group_file#${IMAGE_ROOTFS}}"
         fi
 
-        tmp="${group_file}.iotgw-supp-tmp"
-        awk -F: -v g="${group}" -v u="${user}" '
-        BEGIN { OFS=":" }
-        $1 == g {
-            n = split($4, members, ",")
-            found = 0
-            for (i = 1; i <= n; i++) if (members[i] == u) { found = 1; break }
-            if (!found) {
-                if ($4 == "") $4 = u
-                else          $4 = $4 "," u
+        # /etc/group and /etc/gshadow BOTH carry the member list (field 4) and
+        # must stay in sync. Updating only /etc/group leaves the pair
+        # inconsistent — `grpck` reports "<user> is a member of the '<group>'
+        # group in /etc/group but not in /etc/gshadow", which is what surfaced
+        # as Lynis AUTH-9216 on the dev image. NSS reads /etc/group, so the
+        # membership itself works; the inconsistency is an integrity signal and
+        # trips group-management tooling.
+        for target in "${group_file}" "${gshadow_file}"; do
+            [ -f "${target}" ] || continue
+
+            tmp="${target}.iotgw-supp-tmp"
+            awk -F: -v g="${group}" -v u="${user}" '
+            BEGIN { OFS=":" }
+            $1 == g {
+                n = split($4, members, ",")
+                found = 0
+                for (i = 1; i <= n; i++) if (members[i] == u) { found = 1; break }
+                if (!found) {
+                    if ($4 == "") $4 = u
+                    else          $4 = $4 "," u
+                }
             }
-        }
-        { print }
-        ' "${group_file}" > "${tmp}"
-        mv "${tmp}" "${group_file}"
+            { print }
+            ' "${target}" > "${tmp}"
+
+            # Carry the original mode/ownership onto the replacement BEFORE
+            # moving it into place. Two traps here, both hit during testing:
+            #   * a plain `mv` takes the tmp file's umask mode — on /etc/gshadow
+            #     (0400, root-only, holds group password hashes) that silently
+            #     widens permissions;
+            #   * redirecting into the original instead (`cat tmp > target`)
+            #     preserves the mode but FAILS on a 0400 file, and fails
+            #     silently — the loop continued and still logged success.
+            # chmod/chown the temp file then mv: mv needs write permission on
+            # the directory, not on the target file, so it works at any mode.
+            chmod --reference="${target}" "${tmp}"
+            chown --reference="${target}" "${tmp}" 2>/dev/null || true
+            if ! mv "${tmp}" "${target}"; then
+                rm -f "${tmp}"
+                bbfatal "iotgw-supplementary-group: failed to update ${target#${IMAGE_ROOTFS}} for '${user}' -> '${group}'"
+            fi
+        done
         bbnote "iotgw-supplementary-group: applied '${user}' -> '${group}'"
     done
 }
