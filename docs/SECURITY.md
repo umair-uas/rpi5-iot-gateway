@@ -275,15 +275,54 @@ lynis audit system
 ```bash
 # First boot audit (full log + normalized summary)
 lynis audit system --quick --no-colors > /data/lynis-baseline.log
-grep -E 'hardening_index=|^warning\\[\\]=|^suggestion\\[\\]=' /var/log/lynis-report.dat \
+grep -E 'hardening_index=|^warning\[\]=|^suggestion\[\]=' /var/log/lynis-report.dat \
   > /data/lynis-baseline.summary
 
 # Compare over time
 lynis audit system --quick --no-colors > /tmp/lynis-current.log
-grep -E 'hardening_index=|^warning\\[\\]=|^suggestion\\[\\]=' /var/log/lynis-report.dat \
+grep -E 'hardening_index=|^warning\[\]=|^suggestion\[\]=' /var/log/lynis-report.dat \
   > /tmp/lynis-current.summary
 diff -u /data/lynis-baseline.summary /tmp/lynis-current.summary
 ```
+
+Lynis has no test for listener address family or bind scope, which is why the
+listening-socket check below exists as a separate, independent control — it is
+not a Lynis finding this product tunes toward.
+
+### Listening Socket Check
+
+Asserts that only the intended sockets are listening, on the intended address
+families, and that the firewall's rules are family-qualified.
+
+```bash
+scripts/run-target-checks.sh <device-ip> exposure
+```
+
+Two independent layers, because they catch different things:
+
+| Layer | Runs | Catches |
+|---|---|---|
+| `iotgw-listen-guard.bbclass` | every image build, no board needed | a socket unit binding an unintended address; covers variants that have never been flashed |
+| `scripts/security/exposure-target.sh` | on a running target | the resulting system, including daemons that bind their own sockets and the live firewall ruleset |
+| `scripts/security/exposure-probe-host.sh` | from a second host | actual reachability — a device cannot prove its own |
+
+**The socket-activation trap.** `sshd` on this image is socket-activated:
+systemd binds the listening socket from `sshd.socket` and hands `sshd -i` an
+already-connected fd. `ListenAddress` and `AddressFamily` in `sshd_config` are
+therefore **inert** — sshd never opens a listening socket, so it never applies
+them. Listen scope lives in `sshd.socket.d/override.conf`.
+
+Upstream ships a bare `ListenStream=22`, which systemd binds **dual-stack**
+(`*:22`). On a device holding a global IPv6 address that is an un-NATed,
+publicly routable management port. The override pins it to `0.0.0.0:22`, and the
+empty `ListenStream=` reset preceding it is required — `ListenStream=` is a
+list, so without the reset the drop-in *adds* a listener and the dual-stack bind
+survives. `systemctl show sshd.socket -p Listen` must return exactly one entry.
+
+The same class applies to the firewall: in a `table inet`, a rule naming a port
+with no family match admits it on IPv4 **and** IPv6. Every service rule in
+`nftables.conf` carries an explicit `meta nfproto` match, enforced at build time
+by `iotgw-firewall.bb` and at runtime by `exposure-target.sh`.
 
 ---
 
@@ -348,7 +387,9 @@ Before deploying to production:
 - [ ] Review and customize firewall rules
 - [ ] Enable kernel security features (`igw_security_prod`)
 - [ ] Run `kernel-hardening-checker -c /proc/config.gz` on the deployed device and review the report
-- [ ] Run Lynis audit and address findings
+- [ ] Regenerate the Lynis baseline and review the diff against `docs/security-baselines/`
+- [ ] Verify only expected TCP/UDP listeners are present (`run-target-checks.sh <ip> exposure`)
+- [ ] Confirm reachability from a second host on every zone the device attaches to, over **both** IPv4 and IPv6 (`exposure-probe-host.sh`) — a device cannot prove its own reachability
 - [ ] Disable unused network services
 - [ ] Configure audit log forwarding (if applicable)
 - [ ] Set up SSH key-based authentication
