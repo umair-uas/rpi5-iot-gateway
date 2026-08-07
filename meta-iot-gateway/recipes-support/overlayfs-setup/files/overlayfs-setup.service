@@ -9,7 +9,8 @@ Before=sysinit.target
 # /var/lib tmpfs (volatile-binds), so neither needs to wait on this unit.
 Wants=data.mount
 RequiresMountsFor=/data
-ConditionPathIsMountPoint=/data
+# Do not use ConditionPathIsMountPoint here: a false condition is a clean skip,
+# which would let the required sysinit dependency succeed without overlays.
 
 [Service]
 Type=oneshot
@@ -17,4 +18,7 @@ RemainAfterExit=yes
 ExecStart=/usr/sbin/overlayfs-setup.sh
 
 [Install]
-WantedBy=sysinit.target
+# Persistent overlays are part of the boot-success contract.  Make sysinit
+# fail closed when /data cannot be mounted or the overlays cannot be assembled,
+# so boot-complete.target cannot allow RAUC to mark that slot good.
+RequiredBy=sysinit.target
