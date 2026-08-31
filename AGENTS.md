@@ -252,6 +252,7 @@ What makes it actually work:
 | RAUC OTA install/rollback | `docs/RAUC_UPDATE.md`, `docs/OTA_UPDATE.md` |
 | Kernel config / CVE & driver backports | `docs/KERNEL.md`, `docs/KERNEL_CVE_PATCH.md`, `docs/KERNEL_DRIVER_BACKPORT.md` |
 | SBOM / CVE scanning, reading reports, userspace triage | `docs/SBOM_CVE.md` |
+| DEEPX DX-M1 accelerator: build gates, module signing, device policy | `docs/DEEPX_DXM1.md` |
 | Deciding whether a CVE applies: stages, evidence, what may suppress | `docs/CVE_APPLICABILITY.md` |
 | Kernel applicability — build-object oracle, CNA re-derivation, the compiled-source blind spot | `docs/KERNEL_CVE_APPLICABILITY.md` |
 | Release workflow | `docs/RELEASE.md` |
