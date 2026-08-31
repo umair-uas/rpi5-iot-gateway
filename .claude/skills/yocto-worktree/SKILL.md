@@ -39,10 +39,41 @@ From the **main checkout root**, run:
 .claude/skills/yocto-worktree/scripts/seed-and-verify.sh .claude/worktrees/agent-<id>
 ```
 
-The script copies `kas/local.yml` into the worktree, then resolves
+The script copies `kas/local.yml` into the worktree, pins
+`KAS_WORK_DIR`/`KAS_BUILD_DIR` to worktree-local paths, then resolves
 `DL_DIR`/`SSTATE_DIR` through kas (sourcing `scripts/env.sh` — agent
-shells don't get direnv) and fails if either points inside the
-worktree's own `build/`.
+shells don't get direnv) and fails if the checkout is not inside the
+worktree or if either cache points inside the worktree's own `build/`.
+
+### What may be shared, and what must never be
+
+| Variable | Share? | Why |
+|---|---|---|
+| `DL_DIR` | **Yes** | Downloads; concurrent access is safe by design. |
+| `SSTATE_DIR` | **Yes** | sstate objects; safe for concurrent read/write. |
+| `KAS_REPO_REF_DIR` | **Yes** | Bare-repo git alternates, read-only. |
+| `KAS_WORK_DIR` | **NEVER** | The layer **checkout**. Two kas runs sharing it check the layers out to *different pins*, and the second silently rewrites the first's metadata mid-build. |
+| `KAS_BUILD_DIR` | **NEVER** | One `bitbake.lock` per build tree. |
+
+**Sourcing `scripts/env.sh` is not sufficient protection.** It derives
+`KAS_WORK_DIR` from its own location — which would be worktree-local —
+but it honours a pre-set value (`${KAS_WORK_DIR:-…}`). A shell that
+already carries the main checkout's export keeps pointing at the main
+`.kas/`. Export both variables explicitly, in every shell, before any
+`kas`/`make`/`bitbake` call in a worktree:
+
+```bash
+export KAS_WORK_DIR="$PWD/.kas" KAS_BUILD_DIR="$PWD/build"
+```
+
+**The failure mode does not look like a coordination problem.** The
+*other* build — the one you are not running — reports `the basehash
+value changed … metadata is not deterministic` against unrelated
+recipes, then dies on a `FileNotFoundError` for a recipe that exists at
+one pin but not the other. Nothing points at the worktree. Diagnose it
+with `git -C .kas/openembedded-core reflog --date=iso`: an unexplained
+`checkout: moving from <pinA> to <pinB>` during someone else's build is
+the signature.
 
 - Exit 0 — caches wired, safe to build.
 - Exit 1 — prerequisites missing. If it reports `kas/local.yml` missing
