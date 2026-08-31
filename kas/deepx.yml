@@ -1,0 +1,85 @@
+header:
+  version: 18
+
+# DEEPX DX-M1 PCIe AI accelerator (M.2, Geekworm-style carrier on the RPi5
+# FFC connector). Opt-in overlay — compose it explicitly:
+#   kas/local.yml:kas/deepx.yml
+#
+# Upstream layer provides the out-of-tree NPU kernel module (dx-driver), the
+# DXRT userspace runtime (dx-rt), a GStreamer stack (dx-stream) and demos.
+# Nothing here is wired into an image yet; this overlay only makes the layer
+# available and parseable. See scratch/dxm1-integration-survey-2026-08-31.md.
+repos:
+  meta-deepx-m1:
+    url: https://github.com/DEEPX-AI/meta-deepx-m1.git
+    # walnascar (Yocto 5.2) branch tip, pinned. Deliberately NOT scarthgap:
+    # both branches need a port, but walnascar is one release from wrynose
+    # instead of four, ships a single dx-driver version (2.6.0) rather than
+    # four, and carries a newer driver SRCREV. Neither branch is
+    # wrynose-compatible on its own — see the patches: block below.
+    branch: walnascar
+    commit: 703831e7aacd7a6d18b0291a94e99aa59bf9113e
+    layers:
+      # Layer sits at the repo root (no sub-layer directory).
+      .:
+    patches:
+      # wrynose compatibility. This CANNOT be done from local_conf_header:
+      # bitbake reads LAYERSERIES_COMPAT_<layer> right after parsing each
+      # conf/layer.conf and then delVar()s it (lib/bb/cookerdata.py, comment
+      # "Sadly we can't have nice things"), precisely so a later local.conf
+      # cannot override it. Patching layer.conf is the only route.
+      0001-wrynose-compat:
+        repo: rpi5-iot-gw
+        path: patches/meta-deepx-m1/0001-layer.conf-declare-wrynose-compatibility.patch
+
+local_conf_header:
+  deepx_porting_note: |
+    # NOTE: LAYERSERIES_COMPAT cannot be set here — see the patches:
+    # block above. The compat assertion lives in the patch; this block is kept
+    # only for the note that recipe-level porting still applies, notably
+    # `S = "${WORKDIR}/git..."` which wrynose makes a hard QA error (oe-core
+    # 53e9ea30aaf). Those fixes belong in bbappends under meta-iot-gateway.
+
+  deepx_enable: |
+    # Enable the DX-M1 feature. Same shape as kas/tpm.yml, which composes
+    # meta-secure-core and sets IOTGW_ENABLE_TPM_SLB9672 in one overlay.
+    #
+    # The gate is still the VARIABLE, not this file: IOTGW_ENABLE_DEEPX_DXM1
+    # defaults to "0" in iotgw-common.inc and is exported by the Makefile, so
+    # `IOTGW_ENABLE_DEEPX_DXM1=0 make ...` turns the feature off while the
+    # layer stays composed. This line is the convenient default for anyone who
+    # composed this overlay deliberately.
+    #
+    # It pulls in fragments/deepx-dxm1-ksyms.cfg and stages the symbol
+    # whitelist into the kernel srctree. It does NOT install any package into
+    # an image yet — the packagegroup wiring is still outstanding.
+    IOTGW_ENABLE_DEEPX_DXM1 = "1"
+
+  deepx_rm_work: |
+    # Keep the DeepX workdirs. This distro inherits rm_work globally
+    # (rpi5.yml), which discards a recipe's WORKDIR after a successful build.
+    # For a proprietary out-of-tree driver we are actively porting, the
+    # unpacked source and the build objects ARE the troubleshooting material:
+    # modpost output, Module.symvers, generated headers and the .ko before and
+    # after signing. Re-fetching gets the source back but not the build tree.
+    #
+    # Note this only matters on SUCCESS — do_rm_work runs after do_build, so a
+    # failed compile leaves its workdir intact for diagnosis either way. The
+    # kernel is already excluded in kas/local.yml, which the signing class
+    # depends on separately (it needs ${STAGING_KERNEL_BUILDDIR}/certs).
+    RM_WORK_EXCLUDE += "dx-driver dx-rt"
+
+  deepx_notes: |
+    # NOT YET WIRED, and deliberately so. Two prerequisites are unmet:
+    #
+    #  1. Module signing. This distro sets CONFIG_MODULE_SIG_FORCE=y on every
+    #     image (igw_security_prod is in the default IOTGW_KERNEL_FEATURES),
+    #     and dx-driver has no signing step. Its .ko will load with ENOKEY
+    #     until one exists. Verified on target: sig_enforce=Y.
+    #
+    #  2. CONFIG_TRIM_UNUSED_KSYMS=y strips exported symbols unused by the
+    #     in-tree build, which an out-of-tree module compiled afterwards then
+    #     cannot resolve.
+    #
+    # Adding dx-driver to an image before those are solved produces a package
+    # that installs cleanly and never loads.

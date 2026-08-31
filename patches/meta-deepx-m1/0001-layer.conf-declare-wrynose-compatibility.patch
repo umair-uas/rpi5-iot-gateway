@@ -1,0 +1,29 @@
+From e029a23b15925a24d272cbd9d6f6a4f09962bb6b Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Mon, 31 Aug 2026 16:08:14 +0200
+Subject: [PATCH] layer.conf: declare wrynose compatibility
+
+The layer declares walnascar only. This project builds wrynose (Yocto 6.0)
+and has validated the layer against it, so add wrynose to the compat list.
+
+Amending conf/layer.conf is the only mechanism that works: bitbake reads
+LAYERSERIES_COMPAT_<layer> immediately after parsing each layer.conf and
+then delVar()s it (bitbake lib/bb/cookerdata.py, 'Sadly we can't have nice
+things'), specifically so it cannot be overridden from local.conf later.
+
+Upstream-Status: Inappropriate [oe specific]
+Assisted-by: claude-code:claude-opus-5[1m]
+---
+ conf/layer.conf | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/conf/layer.conf b/conf/layer.conf
+index 30ff800..15e3e07 100644
+--- a/conf/layer.conf
++++ b/conf/layer.conf
+@@ -10,4 +10,4 @@ BBFILE_PATTERN_meta-deepx-m1 = "^${LAYERDIR}/"
+ BBFILE_PRIORITY_meta-deepx-m1 = "6"
+ 
+ LAYERDEPENDS_meta-deepx-m1 = "core"
+-LAYERSERIES_COMPAT_meta-deepx-m1 = "walnascar"
++LAYERSERIES_COMPAT_meta-deepx-m1 = "walnascar wrynose"
