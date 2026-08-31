@@ -253,6 +253,8 @@ What makes it actually work:
 | Kernel config / CVE & driver backports | `docs/KERNEL.md`, `docs/KERNEL_CVE_PATCH.md`, `docs/KERNEL_DRIVER_BACKPORT.md` |
 | SBOM / CVE scanning, reading reports, userspace triage | `docs/SBOM_CVE.md` |
 | DEEPX DX-M1 accelerator: build gates, module signing, device policy | `docs/DEEPX_DXM1.md` |
+| AI accelerators — new to the domain, vocabulary, the host/target model | `docs/AI_ACCELERATION_101.md` |
+| AI accelerators — pipeline diagram, what's built by whom, extending to a second vendor | `docs/AI_ACCELERATION_ARCHITECTURE.md` |
 | Deciding whether a CVE applies: stages, evidence, what may suppress | `docs/CVE_APPLICABILITY.md` |
 | Kernel applicability — build-object oracle, CNA re-derivation, the compiled-source blind spot | `docs/KERNEL_CVE_APPLICABILITY.md` |
 | Release workflow | `docs/RELEASE.md` |
