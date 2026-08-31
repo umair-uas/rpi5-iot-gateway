@@ -66,6 +66,13 @@ local_conf_header:
     # so listing them shows what these two lines are overriding:
     #
     #   git -C .kas/openembedded-core ls-tree --name-only HEAD meta/recipes-devtools/sbom-cve-check/
+    #
+    # Checked at the 2026-07-30 oe-core pin: upstream's recipes are
+    # sbom-cve-check-update-nvd-native_2026.05.07-000006 and
+    # sbom-cve-check-update-cvelist-native_2026-05-07, i.e. 2026-05-07. The
+    # pins above (2026-06-16) are NEWER, so they hold the database forward --
+    # the benign direction. Re-check on the next layer bump; the direction can
+    # invert on its own as upstream advances.
 
     # create-spdx/sbom-cve-check attach image post-build tasks whose sstate
     # output lives in DEPLOY_DIR_IMAGE. Keep image WORKDIRs around so rm_work
