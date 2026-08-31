@@ -211,7 +211,7 @@ IOTGW_NET_LISTEN_ALLOW ?= "sshd.socket=0.0.0.0:22"
 # Allow injecting Wi-Fi credentials from the shell environment without committing them
 # Usage: export IOTGW_WIFI_SSID=MySSID IOTGW_WIFI_PSK=Secret && bitbake iot-gw-image-rauc
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_WIFI_SSID IOTGW_WIFI_PSK IOTGW_WIFI_IFACE IOTGW_ENABLE_OTBR"
-BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI"
+BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_SLB9672 IOTGW_TPM_DTO_OVERLAY IOTGW_ENABLE_KERNEL_NO_EFI IOTGW_ENABLE_DEEPX_DXM1"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_TPM_CRYPTO_PROVIDERS"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_ENABLE_OTA_TPM_MTLS IOTGW_OTA_TPM_KEY_URI IOTGW_OTA_TPM_KEY_ENGINE IOTGW_OTA_OPENSSL_CONF"
 BB_ENV_PASSTHROUGH_ADDITIONS .= " IOTGW_RAUC_STREAMING_KEY_MODE IOTGW_RAUC_PKCS11_BACKEND IOTGW_RAUC_PKCS11_TLS_KEY IOTGW_RAUC_PKCS11_MODULE IOTGW_RAUC_PKCS11_PROVIDER_PACKAGES IOTGW_TPM2_PKCS11_STORE"
@@ -476,6 +476,17 @@ RPI_EXTRA_CONFIG:append = "${@bb.utils.contains('IOTGW_ENABLE_TPM_SLB9672', '1',
 # observability so profiles can choose one or both without coupling.
 IOTGW_ENABLE_BTF_CORE_DEV ?= "0"
 IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_BTF_CORE_DEV', '1', ' igw_btf_core_dev', '', d)}"
+
+# DEEPX DX-M1 PCIe NPU accelerator. TWO SEPARATE GATES, deliberately not one:
+#   1. layer availability  — compose kas/deepx.yml (makes meta-deepx-m1 parse)
+#   2. feature enablement  — this toggle. TODAY it only pulls in the kernel
+#                            symbol whitelist that lets the out-of-tree driver
+#                            link. It installs NOTHING into an image: no
+#                            packagegroup exists yet.
+# Composing the layer must NOT by itself put a proprietary accelerator driver
+# into an image; enabling the feature is a separate, explicit act.
+IOTGW_ENABLE_DEEPX_DXM1 ?= "0"
+IOTGW_KERNEL_FEATURES:append = "${@bb.utils.contains('IOTGW_ENABLE_DEEPX_DXM1', '1', ' igw_deepx_dxm1', '', d)}"
 
 # Optional dev TPM/LUKS loopback store (/data/encstore). Keep opt-in to avoid
 # boot-time/setup overhead on images where encrypted-store testing is not active.

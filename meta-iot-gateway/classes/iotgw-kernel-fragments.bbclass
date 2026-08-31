@@ -36,6 +36,10 @@ IOTGW_KERNEL_FRAGMENTS += "${@'vcio-rpi.cfg' if d.getVar('IOTGW_ENABLE_VCIO') ==
 
 # Optional fragments toggled via IOTGW_KERNEL_FEATURES (space/comma-separated).
 IOTGW_KERNEL_FRAGMENTS += "${@'compute-media.cfg' if 'igw_compute_media' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
+# DX-M1 accelerator: widen the exported-symbol set by exactly two symbols so
+# the out-of-tree NPU driver can link. Scoped to the feature so every other
+# image keeps TRIM_UNUSED_KSYMS at full strength.
+IOTGW_KERNEL_FRAGMENTS += "${@'deepx-dxm1-ksyms.cfg' if 'igw_deepx_dxm1' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 IOTGW_KERNEL_FRAGMENTS += "${@'containers-cgroups.cfg' if 'igw_containers' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 IOTGW_KERNEL_FRAGMENTS += "${@'networking-iot.cfg' if 'igw_networking_iot' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
 IOTGW_KERNEL_FRAGMENTS += "${@'observability-dev.cfg' if 'igw_observability_dev' in (d.getVar('IOTGW_KERNEL_FEATURES') or '').replace(',', ' ').split() else ''}"
