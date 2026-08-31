@@ -53,6 +53,22 @@ WT=$1
 cp kas/local.yml "$WT/kas/local.yml" || die "failed to copy kas/local.yml into $WT/kas/"
 echo "seeded: $WT/kas/local.yml"
 
+# scripts/env.local.sh is gitignored, so `git worktree add` does NOT create it
+# in the new worktree -- untracked files are not carried over. It is what sets
+# KAS_REPO_REF_DIR (the bare-repo mirror used for git alternates). Without it
+# kas does FULL clones of every upstream layer into the worktree instead of
+# cheap alternates: several GB and a long fetch, for data already on disk.
+# Not fatal, so warn rather than die, but copy it whenever the main checkout
+# has one.
+if [ -f scripts/env.local.sh ]; then
+    cp scripts/env.local.sh "$WT/scripts/env.local.sh" \
+        || die "failed to copy scripts/env.local.sh into $WT/scripts/"
+    echo "seeded: $WT/scripts/env.local.sh"
+else
+    echo "WARNING: no scripts/env.local.sh in the main checkout — KAS_REPO_REF_DIR" >&2
+    echo "         will be unset and kas will do full layer clones (slow, GBs)." >&2
+fi
+
 cd "$WT" || die "cannot cd into $WT"
 [ -f scripts/env.sh ] || die "$WT has no scripts/env.sh — not a checkout of this repo?"
 
@@ -95,6 +111,14 @@ for v in DL_DIR SSTATE_DIR; do
     esac
 done
 [ "$bad" -eq 0 ] || exit 2
+# Mirror alternates are an optimisation, not a correctness requirement, so
+# this reports rather than fails.
+if [ -n "${KAS_REPO_REF_DIR:-}" ]; then
+    echo "OK: KAS_REPO_REF_DIR=$KAS_REPO_REF_DIR (layers via git alternates)"
+else
+    echo "WARNING: KAS_REPO_REF_DIR unset — kas will full-clone every layer" >&2
+fi
+
 echo "shared caches wired, layer checkout isolated — safe to build"
 echo "  isolated: KAS_WORK_DIR=$KAS_WORK_DIR"
 echo "  isolated: KAS_BUILD_DIR=$KAS_BUILD_DIR"
