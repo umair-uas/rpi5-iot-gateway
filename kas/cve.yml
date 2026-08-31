@@ -20,10 +20,52 @@ local_conf_header:
     IMAGE_CLASSES:append = " sbom-cve-check"
     SPDX_INCLUDE_VEX = "all"
 
-    # The upstream fragment defaults the CVE DB recipes to AUTOREV. Pin back
-    # to the wrynose recipe SRCREVs so a release SBOM/CVE run is reproducible.
-    SRCREV:pn-sbom-cve-check-update-nvd-native     = "49f8bbe1b0b0884e16bdc37ab68db997085570a7"
-    SRCREV:pn-sbom-cve-check-update-cvelist-native = "ada54ee3cc8380820aa45e4996910bdc9dcb94e7"
+    # CVE database pins — the fkie-cad NVD JSON feeds and cvelistV5.
+    #
+    # The upstream fragment defaults both to AUTOREV. Pin them so a release
+    # SBOM/CVE run is reproducible: two scans of the same commit have to see
+    # the same knowledge, or the report is not evidence of anything.
+    #
+    # Reproducible is not the same as current, and the difference is invisible
+    # from the output. A pinned database ages silently — the scan keeps
+    # succeeding and the unpatched count keeps looking healthy while every CVE
+    # published after the cutoff simply is not in the data. The dates below are
+    # part of the pin: refresh them deliberately, and never quote an unpatched
+    # count without saying which cutoff produced it.
+    #
+    # Keep each date on its own line. BitBake's conf parser requires an
+    # assignment to end at its closing quote, so a trailing "# ..." on these
+    # lines is a ParseError, not a comment. For the same reason, never end a
+    # comment line here with a backslash: line-joining happens before comment
+    # stripping, so the comment swallows the next line and the file fails to
+    # parse. Both verified against bb.parse directly.
+    #
+    # nvd-json-data-feeds @ 2026-06-16
+    SRCREV:pn-sbom-cve-check-update-nvd-native     = "b9056dbe8175514b36ed1720cd223fc73aa1796c"
+    # cvelistV5 @ 2026-06-16
+    SRCREV:pn-sbom-cve-check-update-cvelist-native = "d34c26123e45e877be017cf361b64edc0eefc4b6"
+
+    # Escape hatch: uncomment to scan against the current database tip instead.
+    # Useful for answering "what has landed since the pin?" — it makes the run
+    # unreproducible, so never leave it enabled for a release scan.
+    #SRCREV:pn-sbom-cve-check-update-nvd-native     = "${AUTOREV}"
+    #SRCREV:pn-sbom-cve-check-update-cvelist-native = "${AUTOREV}"
+
+    # WHEN BUMPING THE LAYER PINS IN rpi5.yml: re-check the two SRCREVs above
+    # in the same change. These overrides are keyed on PN, and upstream moved
+    # the database version into PV — so they survive a layer bump and keep
+    # binding, whatever version the recipe filename claims.
+    #
+    # Which way that binding cuts depends on whether these pins are newer or
+    # older than upstream's default, and that changes on its own as upstream
+    # advances. Newer: the override holds the database forward, no harm. Older:
+    # the same override silently holds us behind — the build succeeds, the
+    # unpatched count even improves (the layer bump brings its own CVE patches),
+    # and the database has not moved. Never assume which case applies; compare
+    # them. After a bump the recipe filenames carry the upstream database date,
+    # so listing them shows what these two lines are overriding:
+    #
+    #   git -C .kas/openembedded-core ls-tree --name-only HEAD meta/recipes-devtools/sbom-cve-check/
 
     # create-spdx/sbom-cve-check attach image post-build tasks whose sstate
     # output lives in DEPLOY_DIR_IMAGE. Keep image WORKDIRs around so rm_work
