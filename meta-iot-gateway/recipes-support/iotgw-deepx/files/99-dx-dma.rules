@@ -1,0 +1,15 @@
+# DEEPX DX-M1 accelerator device nodes.
+#
+# Upstream's dx-driver installs MODE="0666" — world read/write on a
+# DMA-capable accelerator, on an image running SELinux with the full
+# security-prod.cfg posture. Replaced here.
+#
+# root:dxrt 0660 is the deliberate middle ground: not world-writable, and not
+# root-only either, so the dxrtd daemon can run as its own unprivileged
+# account (iotgw-deepx-runtime creates it) and reach the device through group
+# membership rather than privilege.
+#
+# Anything else needing the accelerator joins the dxrt group; it does not get
+# the mode widened.
+KERNEL=="dxrt*", SUBSYSTEM=="dxrt", OWNER="root", GROUP="dxrt", MODE="0660"
+KERNEL=="dxrt*", OWNER="root", GROUP="dxrt", MODE="0660"

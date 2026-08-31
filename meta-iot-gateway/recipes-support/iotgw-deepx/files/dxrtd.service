@@ -1,0 +1,58 @@
+# DXRT daemon for the DEEPX DX-M1 accelerator.
+#
+# Replaces the SysV script the vendor ships (dxrt-init, via update-rc.d): this
+# distro has no sysvinit in DISTRO_FEATURES anywhere, so that script would be
+# installed and never run. The vendor's own dxrt.service is left commented out
+# upstream and, being three lines with no ordering or confinement, is a
+# starting point rather than something to ship as-is.
+[Unit]
+Description=DEEPX DXRT daemon (DX-M1 accelerator)
+Documentation=https://github.com/DEEPX-AI/dx_rt
+
+# The daemon talks to /dev/dxrt*, which only exists once dxrt_driver is loaded.
+# dx_dma is what we autoload; its softdep ("softdep dx_dma pre: dxrt_driver")
+# pulls dxrt_driver in first. Ordering after systemd-modules-load covers the
+# autoload path, and the device unit covers the case where the module arrives
+# later or the card is absent.
+After=systemd-modules-load.service
+Requires=systemd-modules-load.service
+
+# Do not crash-loop on a board with no accelerator fitted: without the device
+# node the daemon has nothing to serve, so the unit simply does not start.
+ConditionPathExistsGlob=/dev/dxrt*
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/dxrtd
+Restart=on-failure
+RestartSec=2s
+
+# Runs as a dedicated account, not root. Device access comes from the dxrt
+# group via the udev rule (root:dxrt 0660), not from privilege.
+User=dxrt
+Group=dxrt
+StateDirectory=dxrt
+
+# Confinement. The daemon is vendor code driving a DMA-capable PCIe device;
+# it gets the filesystem and namespace restrictions this distro applies
+# elsewhere. Deliberately NOT set: PrivateDevices (it would hide /dev/dxrt*,
+# which is the entire point of the daemon).
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=no
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

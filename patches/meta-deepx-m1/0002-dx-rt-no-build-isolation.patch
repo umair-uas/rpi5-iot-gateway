@@ -1,0 +1,60 @@
+From aa0900f7bc378566324ccf34b8a89f225b9fe991 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Mon, 31 Aug 2026 19:58:50 +0200
+Subject: [PATCH] dx-rt: do not fetch build dependencies during do_install
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+do_install runs `pip install .` with --no-deps, which suppresses runtime
+dependency resolution but not BUILD dependency resolution. Without
+--no-build-isolation, pip creates a fresh build venv and downloads
+setuptools/wheel from PyPI to populate it:
+
+    Failed to establish a new connection: [Errno -5] No address associated
+      with hostname
+    ERROR: Could not find a version that satisfies the requirement
+      setuptools>=40.8.0 (from versions: none)
+    ERROR: Failed to build '.../python_package' when installing build
+      dependencies
+
+BitBake grants network access only to do_fetch; do_install has none on a
+correctly isolated builder, so this fails anywhere the build host cannot
+reach PyPI from a build task. Recipes must not fetch outside do_fetch.
+
+Add --no-build-isolation so pip uses the build backend already staged in the
+native sysroot, and add python3-setuptools-native to DEPENDS so it is
+actually there — without it, disabling isolation moves the failure from
+'cannot download setuptools' to 'cannot find setuptools'.
+
+Note: PIP_NO_BUILD_ISOLATION in the task environment is NOT a reliable
+substitute; it was confirmed exported into the do_install script and pip
+still took the isolation path.
+
+Upstream-Status: Inappropriate [oe specific]
+Assisted-by: claude-code:claude-opus-5[1m]
+---
+ recipes-runtime/dx-rt/dx-rt_3.4.1.bb | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/recipes-runtime/dx-rt/dx-rt_3.4.1.bb b/recipes-runtime/dx-rt/dx-rt_3.4.1.bb
+index adb9cb2..3a3ff08 100644
+--- a/recipes-runtime/dx-rt/dx-rt_3.4.1.bb
++++ b/recipes-runtime/dx-rt/dx-rt_3.4.1.bb
+@@ -26,7 +26,7 @@ INITSCRIPT_PARAMS = "defaults 90"
+ DEPENDS += "libonnxruntime"
+ DEPENDS += "python3 python3-pybind11"
+ DEPENDS += "python3-native chrpath-native"
+-DEPENDS += "python3-pip-native python3-wheel-native"
++DEPENDS += "python3-pip-native python3-wheel-native python3-setuptools-native"
+ 
+ # ------------------------------------------------------------------
+ # CMake feature toggles to avoid configure failure:
+@@ -145,6 +145,7 @@ do_install:append() {
+     cd ${S}/python_package
+     python3 -m pip install . \
+         --no-deps \
++        --no-build-isolation \
+         --no-cache-dir \
+         --target="${D}${PYTHON_SITEPACKAGES_DIR}"
+ 

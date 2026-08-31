@@ -45,49 +45,89 @@ inherit iotgw-kernel-module-signing
 # files/deepx-dxm1-ksyms.txt), gated on igw_deepx_dxm1 so other images keep
 # trimming at full strength. Requires IOTGW_ENABLE_DEEPX_DXM1=1.
 
-# Tighten the NPU device node. Upstream installs:
-#     KERNEL=="dxrt*", MODE="0666"
-# i.e. world read/write on an accelerator device, on an image that otherwise
-# runs SELinux and the full security-prod.cfg posture. That is a default worth
-# refusing rather than inheriting.
+# Device policy moved OUT of this bbappend. The 0660 root:root placeholder
+# that lived here is superseded by iotgw-deepx-runtime, which owns the whole
+# story coherently: it creates the dxrt service account and group, ships the
+# udev rule as root:dxrt 0660, and runs dxrtd under that identity. Splitting
+# the rule from the account that makes it meaningful was the wrong seam.
 #
-# This is a deny-by-default PLACEHOLDER, not the final answer. The real answer
-# is a dedicated group whose only member is the consuming service, plus an
-# SELinux label — but the group has to be created by whichever recipe owns the
-# consumer, and cross-recipe group membership in this layer goes through
-# IOTGW_ROOTFS_SUPPLEMENTARY_GROUPS (see .claude/rules/yocto-patterns.md), not
-# through USERADD_PARAM. That decision belongs with the recipe that actually
-# uses the accelerator, which does not exist yet.
+# Upstream's own do_install still writes MODE="0666" to
+# ${sysconfdir}/udev/rules.d/99-dx-dma.rules, so it is DELETED from this
+# package below. An earlier version of this comment claimed our identically
+# named file would simply "win" because it comes from a higher-priority layer.
+# That is false: layer priority decides which RECIPE provides a file, not which
+# PACKAGE may own a path at install time. Two packages owning one path is a
+# hard RPM conflict, and do_rootfs failed with exactly that:
 #
-# Until then root-only is correct: nothing consumes the device, so nothing
-# regresses, and the permissive default cannot reach an image by accident. A
-# consumer arriving later will fail loudly on permissions, which is the right
-# way to be reminded to make the decision.
-do_install:append() {
-    install -d ${D}${sysconfdir}/udev/rules.d
-    echo 'KERNEL=="dxrt*", MODE="0660", OWNER="root", GROUP="root"' \
-        > ${D}${sysconfdir}/udev/rules.d/99-dx-dma.rules
-}
+#   file /etc/udev/rules.d/99-dx-dma.rules conflicts between attempted
+#   installs of iotgw-deepx-runtime and dx-driver
+#
+# Deleting it here leaves iotgw-deepx-runtime as the single owner, which also
+# means the 0666 rule is not merely overridden but never shipped at all.
+
+# Autoload the PCIe driver at boot. dx_dma is the only module named here on
+# purpose: the driver ships "softdep dx_dma pre: dxrt_driver" in dx_dma.conf,
+# so modprobe pulls dxrt_driver in FIRST. Listing both would be redundant and
+# would risk loading them in the wrong order.
+KERNEL_MODULE_AUTOLOAD += "dx_dma"
+
+# Make the recipe's own package pull the modules it built.
+#
+# kernel-module-split names out-of-tree module packages
+# kernel-module-<name>-${KERNEL_VERSION} and emits NO versionless RPROVIDES —
+# confirmed from pkgdata, which carries no RPROVIDES key at all. So an image
+# cannot depend on "kernel-module-dx-dma"; do_rootfs fails with
+# "nothing provides kernel-module-dx-dma".
+#
+# Hard-coding the versioned name in a packagegroup would bake the kernel
+# version into an unrelated recipe and rot at the next kernel bump. Instead the
+# dx-driver package — which IS produced, and which a consumer can name stably —
+# depends on its own modules, with ${KERNEL_VERSION} expanded here where it is
+# legitimately in scope.
+#
+# The repo's usual "kernel-modules" idiom does not help: that meta-package
+# covers modules built by the KERNEL recipe, not out-of-tree ones from a
+# separate recipe.
+RDEPENDS:${PN} += " \
+    kernel-module-dx-dma-${KERNEL_VERSION} \
+    kernel-module-dxrt-driver-${KERNEL_VERSION} \
+"
 
 # buildpaths QA: strip the recorded GCC command line from debug info.
 #
-# do_package_qa failed with the .ko "contains reference to TMPDIR". The
-# references are NOT source paths — DEBUG_PREFIX_MAP already handles those.
-# They are the absolute paths of this distro's GCC hardening plugins:
+# do_package_qa fails with the .ko "contains reference to TMPDIR". The
+# references are NOT source paths — DEBUG_PREFIX_MAP handles those. They are
+# the absolute paths of this distro's own GCC hardening plugins:
 #
-#   .../work-shared/raspberrypi5/kernel-build-artifacts/scripts/gcc-plugins/
-#       latent_entropy_plugin.so
-#       stackleak_plugin.so
+#   .../kernel-build-artifacts/scripts/gcc-plugins/latent_entropy_plugin.so
+#   .../kernel-build-artifacts/scripts/gcc-plugins/stackleak_plugin.so
 #
-# 15 occurrences, all in .debug_str; .comment, .modinfo and .rodata are clean.
-# They arrive because CONFIG_GCC_PLUGINS / GCC_PLUGIN_LATENT_ENTROPY /
-# KSTACK_ERASE (security-prod.cfg) make the kernel pass -fplugin=<abs path>,
-# and GCC's default -grecord-gcc-switches writes that command line into DWARF.
+# 15 occurrences, all in .debug_str; .comment/.modinfo/.rodata are clean.
+# CONFIG_GCC_PLUGINS / GCC_PLUGIN_LATENT_ENTROPY / KSTACK_ERASE
+# (security-prod.cfg) make the kernel pass -fplugin=<abs path>, and GCC's
+# default -grecord-gcc-switches writes that command line into DWARF. So this
+# distro's own hardening options leak the build path into a shipped binary.
 #
-# So this distro's own hardening options are what leak the build path into a
-# shipped binary. INSANE_SKIP would hide that rather than fix it, and this
-# project explicitly does not ship host paths in artifacts — so drop the
-# recorded switches instead. Cost is small and bounded: debuggers lose the
+# INSANE_SKIP would hide that rather than fix it, and this project does not
+# ship host paths in artifacts. Cost of the fix is bounded: debuggers lose the
 # "what flags built this" note; line tables, symbols and types are untouched.
+#
+# Affects ANY out-of-tree module built against this kernel, not just DX-M1.
 KCFLAGS:append = " -gno-record-gcc-switches"
 EXTRA_OEMAKE:append = " KCFLAGS='${KCFLAGS}'"
+
+# Remove upstream's world-writable udev rule from this package. Device policy
+# belongs to iotgw-deepx-runtime, which owns the dxrt account and group that
+# make a 0660 node meaningful.
+do_install:append() {
+    rm -f ${D}${sysconfdir}/udev/rules.d/99-dx-dma.rules
+    # Clean up BOTH now-empty directories, innermost first. Removing only
+    # rules.d leaves an empty /etc/udev, which do_package rejects as
+    # "installed but not shipped in any package" — an empty directory still
+    # counts as installed content.
+    rmdir --ignore-fail-on-non-empty \
+        ${D}${sysconfdir}/udev/rules.d \
+        ${D}${sysconfdir}/udev 2>/dev/null || true
+}
+
+FILES:${PN}:remove = "${sysconfdir}/udev/rules.d/99-dx-dma.rules"
