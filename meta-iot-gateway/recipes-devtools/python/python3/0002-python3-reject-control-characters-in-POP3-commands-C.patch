@@ -1,0 +1,34 @@
+From 5b7b896790c3602a9610629d04a2c52e4f614f78 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Mon, 27 Jul 2026 11:04:06 +0200
+Subject: [PATCH] python3: reject control characters in POP3 commands
+ (CVE-2025-15367)
+
+poplib.POP3._putcmd did not reject C0/C1 control characters in commands,
+allowing CR/LF (and other control-char) injection into the POP3 protocol
+stream. Guard the command line with a control-character regex and raise
+ValueError, matching the upstream fix.
+
+Source-only backport: the upstream commit's test and Misc/NEWS.d entry are
+omitted (Lib/test is not shipped in the image; the release note is not
+applicable to a patch).
+
+Upstream-Status: Backport [https://github.com/python/cpython/commit/b234a2b67539f787e191d2ef19a7cbdce32874e7]
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+---
+ Lib/poplib.py | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Lib/poplib.py b/Lib/poplib.py
+index 4469bff..b97274c 100644
+--- a/Lib/poplib.py
++++ b/Lib/poplib.py
+@@ -122,6 +122,8 @@ class POP3:
+     def _putcmd(self, line):
+         if self._debugging: print('*cmd*', repr(line))
+         line = bytes(line, self.encoding)
++        if re.search(b'[\x00-\x1F\x7F]', line):
++            raise ValueError('Control characters not allowed in commands')
+         self._putline(line)
+ 
+ 

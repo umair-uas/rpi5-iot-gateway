@@ -1,9 +1,10 @@
 FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
-# CVE_STATUS — CVE-2021-34432 affects mosquitto 1.6 through 2.0.10 and was fixed
-# in the 2.0.11 security release; shipped 2.1.2.
+# CVE_STATUS — CVE-2021-34432 affects mosquitto up to and including 2.0.7 and was
+# fixed in the 2.0.8 security release; shipped 2.1.2. NVD, the CVE 5 record and
+# Debian's tracker all agree on the 2.0.8 boundary.
 # https://nvd.nist.gov/vuln/detail/CVE-2021-34432
-CVE_STATUS[CVE-2021-34432] = "fixed-version: fixed in mosquitto 2.0.11; shipped 2.1.2"
+CVE_STATUS[CVE-2021-34432] = "fixed-version: fixed in mosquitto 2.0.8; shipped 2.1.2"
 
 SRC_URI += " \
     file://mosquitto.conf \
