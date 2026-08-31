@@ -31,6 +31,19 @@ repos:
       0001-wrynose-compat:
         repo: rpi5-iot-gw
         path: patches/meta-deepx-m1/0001-layer.conf-declare-wrynose-compatibility.patch
+      # dx-rt's do_install fetches build dependencies from PyPI. BitBake gives
+      # do_install no network, so it fails on any isolated builder. Patched
+      # rather than worked around from a bbappend because the fix belongs
+      # INSIDE their pip invocation and a bbappend cannot edit the middle of a
+      # shell function. PIP_NO_BUILD_ISOLATION in the task environment was
+      # tried first and does NOT work — confirmed exported into
+      # run.do_install and pip still took the isolation path.
+      #
+      # This patch is also exactly what we are proposing upstream, so carrying
+      # it here keeps our fix and our report identical.
+      0002-dx-rt-no-build-isolation:
+        repo: rpi5-iot-gw
+        path: patches/meta-deepx-m1/0002-dx-rt-no-build-isolation.patch
 
 local_conf_header:
   deepx_porting_note: |
