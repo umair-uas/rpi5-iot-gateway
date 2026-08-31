@@ -203,7 +203,9 @@ Ranked by what the evidence is worth:
 2. **Per-claim verification against an independent source** — for metadata
    dispositions, check each claim (shipped version vs fixed boundary, product
    mismatch) against upstream CVE data, *not* against the scanner that produced the
-   finding. Scope rules for authoring those claims: `docs/SBOM_CVE.md`.
+   finding. What may suppress a finding and what may only deprioritise it:
+   `docs/CVE_APPLICABILITY.md`; where each kind of statement is authored:
+   `docs/SBOM_CVE.md`.
 3. **On-target validation** — for runtime behaviour the board is the oracle.
 4. A build, lint run, or test suite — necessary, but only covers what someone
    already thought of.
@@ -229,6 +231,13 @@ What makes it actually work:
 - Don't re-run an equivalent failing command hoping for a different result — change one variable per retry.
 - No speculative adjacent refactors; keep the diff scoped to the request.
 - Subagents and isolated worktrees only when parallelism or build pollution justifies the cost (Claude: `yocto-worktree` skill).
+- **Long-running builds (>~10 min): launch detached, never via the agent harness's background-process mechanism.** A harness-spawned background process stays a child of the agent's tool runner and dies with it — the build gets SIGTERM'd mid-task (`make` exits 241 with no bitbake `ERROR:` lines, which reads like a mystery failure). Instead, from an ordinary foreground shell call:
+
+  ```bash
+  setsid nohup make <target> > scratch/<topic>.log 2>&1 &
+  ```
+
+  `setsid` gives the job its own session; once the launching shell exits it reparents to the init/user manager and nothing in the agent's process tree can signal it. Watch progress with a **separate** poller that only reads the log file — decouple the watcher from the work, so a killed poller is just re-armed while the build survives. For builds that matter, prefer handing the operator the one-liner to run in their own shell. A killed build is recoverable either way (bitbake resumes from sstate), but the detached form avoids the wasted hours and the misleading failure mode.
 - Stop at the requested milestone; report remaining work instead of continuing unprompted.
 
 ## Where detailed guidance lives
@@ -243,6 +252,8 @@ What makes it actually work:
 | RAUC OTA install/rollback | `docs/RAUC_UPDATE.md`, `docs/OTA_UPDATE.md` |
 | Kernel config / CVE & driver backports | `docs/KERNEL.md`, `docs/KERNEL_CVE_PATCH.md`, `docs/KERNEL_DRIVER_BACKPORT.md` |
 | SBOM / CVE scanning, reading reports, userspace triage | `docs/SBOM_CVE.md` |
+| Deciding whether a CVE applies: stages, evidence, what may suppress | `docs/CVE_APPLICABILITY.md` |
+| Kernel applicability — build-object oracle, CNA re-derivation, the compiled-source blind spot | `docs/KERNEL_CVE_APPLICABILITY.md` |
 | Release workflow | `docs/RELEASE.md` |
 | Partition layouts | `docs/PARTITIONS.md` |
 

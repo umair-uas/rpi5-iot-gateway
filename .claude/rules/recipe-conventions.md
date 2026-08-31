@@ -42,12 +42,31 @@ Which patches it applies to depends on the `Upstream-Status` tag:
 |---|---|
 | `Inappropriate [oe specific]`, `Inappropriate [product specific — ...]` | Yes. Never leaves the repo; our rules are the only rules. |
 | `Pending`, `Submitted [<where>]` | Yes here — but the receiving project's trailer rules win at submission time. `Assisted-by:` is not part of the kernel/U-Boot canonical trailer set; check that project's current contribution docs before sending, and be ready to drop it. |
-| `Backport [...]` (both verbatim and adapted) | **No — do not touch the header.** The commit message and its `Signed-off-by:` chain belong to the original author (e.g. the rpi RTC driver patch carries popcornmix' and Jonathan Bell's sign-offs). Only the `Upstream-Status:` line is ours to add. Adding our trailers misattributes their work and destroys the verbatim-cherry-pick property. |
+| `Backport [...]` (both verbatim and adapted) | **No — do not touch the header.** The commit message and its `Signed-off-by:` chain belong to the original author (e.g. the rpi RTC driver patch carries popcornmix' and Jonathan Bell's sign-offs). Only the `Upstream-Status:` line is ours to add. Adding our trailers misattributes their work and destroys the verbatim-cherry-pick property. **Exception: CVE security backports — see below.** |
 
 `Signed-off-by:` stays last and stays a **human**. Attribution records
 who helped write the patch; the DCO sign-off certifies who takes
 responsibility for it. An `Assisted-by:` line never substitutes for a
-sign-off, and an agent never adds a sign-off on the operator's behalf.
+sign-off, and an agent never adds — or requests — a sign-off on its own
+initiative.
+
+**CVE security backports are the one exception, and only when the operator
+explicitly asks for a sign-off in that session** — never by default, never
+inferred from "this is a CVE fix." This holds however the backport was
+produced.
+
+When one is asked for, the invariants are:
+
+- **Never overwrite or remove an existing upstream `Signed-off-by:`** —
+  append below it. Each backporter adds their own line, chain-of-custody
+  style; see the CVE-2022-3341 FFmpeg example in the
+  [Yocto security manual](https://docs.yoctoproject.org/security-manual/vulnerabilities.html#fixing-vulnerabilities-in-recipes).
+- **Use the operator's real resolved identity** — never a placeholder,
+  never an automation identity.
+- **Add it only on that explicit request**, in that session.
+
+Everywhere else, the Backport rule above stands unchanged: don't touch
+the header, no `Assisted-by:`, no sign-off unless asked.
 
 Retrofitting is also expensive, not just dishonest — see §"sstate
 gotcha: patch-header edits trigger full rebuilds".
