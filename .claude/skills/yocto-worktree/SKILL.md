@@ -28,7 +28,13 @@ and a branch named `worktree-agent-<id>`.
 
 ## 1. Seed and verify — run the script
 
-`kas/local.yml` is gitignored, so a fresh worktree does **not** have it.
+`kas/local.yml` and `scripts/env.local.sh` are both gitignored, and
+`git worktree add` does not carry untracked files over, so a fresh
+worktree has **neither**. The script copies both: `kas/local.yml` for
+the shared `DL_DIR`/`SSTATE_DIR`, and `scripts/env.local.sh` for
+`KAS_REPO_REF_DIR` (without which kas full-clones every upstream layer
+rather than using cheap git alternates — several GB for data already on
+disk).
 Without it, `make` falls back to `kas/rauc.yml` and the build won't use
 the shared `DL_DIR`/`SSTATE_DIR` — a cold build takes hours instead of
 the minutes an sstate-hit build takes.
