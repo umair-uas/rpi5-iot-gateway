@@ -11,7 +11,7 @@ desktop) is FIT. The `iotgw-fit-signing-guard.bbclass` guard **hard-fails the
 build** unless the build-time FIT signing key — the **file key** — is present:
 
 - **File key (required; the in-band signer):**
-  `${UBOOT_SIGN_KEYDIR}/${UBOOT_SIGN_KEYNAME}.{crt,key}`. `linux-iotgw-fit` always
+  `${UBOOT_SIGN_KEYDIR}/${UBOOT_SIGN_KEYNAME}.{crt,key}`. `iotgw-fit-image` always
   signs the FIT with this file key during the build (via the upstream
   `kernel-fit-image` class), so both the cert **and** the private key must exist.
   Generate one below.
@@ -43,7 +43,7 @@ inert and the build hard-fails as if unconfigured.
 ### Split-FIT model (already in this project)
 - `PREFERRED_PROVIDER_virtual/kernel = "linux-iotgw-mainline-fit"` builds the raw
   kernel `Image`; `KERNEL_IMAGETYPE = "Image"` (not flipped to `fitImage`).
-- The signed `fitImage` is assembled + signed by the separate `linux-iotgw-fit`
+- The signed `fitImage` is assembled + signed by the separate `iotgw-fit-image`
   recipe (upstream `kernel-fit-image` class) and staged onto `/boot` via
   `IMAGE_BOOT_FILES:append = " fitImage"`.
 - Boot is the compiled-in U-Boot env (`iotgw_load_boot` / `iotgw_exec_fit`)
@@ -53,7 +53,7 @@ inert and the build hard-fails as if unconfigured.
 ### FIT config model
 
 The FIT carries a single signed `default` configuration (`FIT_CONF_DEFAULT_DTB`),
-assembled by the upstream `kernel-fit-image` class (`linux-iotgw-fit`). U-Boot boots
+assembled by the upstream `kernel-fit-image` class (`iotgw-fit-image`). U-Boot boots
 that default with a bare `bootm` (no `#conf`); `iotgw_fit_conf` is an operator
 override only, cleared by the OTA hook on every install. If multiple board configs
 are ever needed, use the upstream class's `FIT_CONF_MAPPINGS`. The former
