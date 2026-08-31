@@ -16,21 +16,28 @@ repos:
   # enforced.
   bitbake:
     url: https://git.openembedded.org/bitbake
-    # yocto-6.0 tag
-    commit: 33581c84f3a85008239acbd940501a35de48dc91
+    # 2.18 branch tip, 2026-07-09. Moves with the poky cluster: bump this,
+    # openembedded-core and meta-openembedded together or not at all.
+    commit: fae9db3168dbff1b8c76fe9c6726a9687ff97514
     layers: {}
 
   openembedded-core:
     url: https://git.openembedded.org/openembedded-core
-    # yocto-6.0 tag
-    commit: 42fa856a00ac16b2a7a83d7ecfa60a5be192b16c
+    # wrynose branch tip, 2026-07-30 (bumped from the yocto-6.0 tag, which was
+    # 281 commits behind: 117 of them CVE fixes covering 205 distinct CVE ids
+    # -- expat x12, vim x9, openssh x9, cups x8, curl x7, gnutls x5, plus
+    # python3, sudo, busybox, libarchive, sqlite3, tar, libpng).
+    commit: f09a0f28aeb54ddd90415dd458338e1565bb5a49
     layers:
       meta:
 
   meta-openembedded:
     url: https://git.openembedded.org/meta-openembedded
-    # wrynose HEAD at baseline
-    commit: 420222862f5a6d95023b8f5f3b7e1808b2264ef9
+    # wrynose branch tip, 2026-07-30. Shares oe-core's class/python API, so it
+    # moves in lockstep with the poky cluster above; carries userland CVE
+    # backports (99 distinct CVE ids since the previous pin -- jq alone gained
+    # ten).
+    commit: 6bf0d8ad57b33950bab4c7f6c037e1ccb6f6e2eb
     layers:
       meta-oe:
       meta-python:

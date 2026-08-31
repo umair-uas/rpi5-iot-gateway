@@ -6,7 +6,3 @@
 #   https://nvd.nist.gov/vuln/detail/CVE-2025-64517
 CVE_STATUS[CVE-2025-64170] = "cpe-incorrect: affects the Rust sudo-rs, not classic C sudo (shipped)"
 CVE_STATUS[CVE-2025-64517] = "cpe-incorrect: affects the Rust sudo-rs, not classic C sudo (shipped)"
-
-FILESEXTRAPATHS:prepend := "${THISDIR}/${PN}:"
-
-SRC_URI += "file://CVE-2026-35535.patch"
