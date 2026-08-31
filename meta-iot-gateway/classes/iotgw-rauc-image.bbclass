@@ -23,7 +23,7 @@ WKS_FILE = "iot-gw-rauc-128g.wks.in"
 # Deterministic (not `--use-uuid` random) keeps images reproducible.
 
 # Split-FIT WIC wiring (wrynose): under the FIT boot flow the fitImage is
-# assembled + signed by the separate linux-iotgw-fit recipe (not
+# assembled + signed by the separate iotgw-fit-image recipe (not
 # virtual/kernel, which now yields a plain Image). So the WIC must:
 #  (a) stage the signed fitImage into the boot partition (the compiled-in
 #      U-Boot env loads it),
@@ -37,8 +37,8 @@ IMAGE_BOOT_FILES:append = " fitImage"
 # CONFIG_CMD_SOURCE=n so a bootscript can never be sourced. Carrying boot.scr
 # onto /boot is dead weight and misleads readers about the boot path.
 IMAGE_BOOT_FILES:remove = "boot.scr"
-# FIT is the only boot flow; linux-iotgw-fit always assembles the signed fitImage.
-do_image_wic[depends] += " linux-iotgw-fit:do_deploy"
+# FIT is the only boot flow; iotgw-fit-image always assembles the signed fitImage.
+do_image_wic[depends] += " iotgw-fit-image:do_deploy"
 
 # Keep stock /etc/fstab from base-files intact.
 # WIC's imager-level fstab update appends mount lines globally and can create

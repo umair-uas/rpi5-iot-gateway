@@ -3,7 +3,7 @@
 # signing key is not usable (which would otherwise yield an unsigned FIT that
 # the hardened U-Boot, CONFIG_FIT_SIGNATURE=y, cannot boot anyway).
 #
-# The in-band FIT signer is ALWAYS the file key: linux-iotgw-fit feeds the
+# The in-band FIT signer is ALWAYS the file key: iotgw-fit-image feeds the
 # upstream kernel-fit-image class from UBOOT_SIGN_KEYDIR / UBOOT_SIGN_KEYNAME, so
 # this guard requires that file key (.crt + .key). YubiKey / SoftHSM are trust
 # roots (DTB pubkeys) + the out-of-band resigner (scripts/fit-signing/sign_fit.py) — a YK
