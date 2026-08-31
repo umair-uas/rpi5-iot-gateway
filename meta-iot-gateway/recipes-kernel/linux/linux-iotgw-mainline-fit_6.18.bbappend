@@ -47,3 +47,25 @@
 # present. Only worth doing if the differential above shows the file still
 # earns its place.
 include ${THISDIR}/files/cve-exclusion_6.18.inc
+
+# --- DX-M1 exported-symbol whitelist -----------------------------------------
+# CONFIG_UNUSED_KSYMS_WHITELIST resolves its path relative to the kernel source
+# tree, and Kbuild SILENTLY IGNORES a path that does not exist — it is not an
+# error. So the file is fetched and staged here, and its absence is made fatal
+# explicitly. Gated on the same feature as the fragment that sets the option,
+# so the two cannot drift apart.
+SRC_URI:append = "${@bb.utils.contains('IOTGW_KERNEL_FEATURES', 'igw_deepx_dxm1', ' file://deepx-dxm1-ksyms.txt', '', d)}"
+
+do_configure:prepend() {
+    if ${@bb.utils.contains('IOTGW_KERNEL_FEATURES', 'igw_deepx_dxm1', 'true', 'false', d)}; then
+        if [ ! -f "${UNPACKDIR}/deepx-dxm1-ksyms.txt" ]; then
+            bbfatal "igw_deepx_dxm1 is enabled but deepx-dxm1-ksyms.txt was not fetched into ${UNPACKDIR}."
+        fi
+        install -m 0644 "${UNPACKDIR}/deepx-dxm1-ksyms.txt" "${S}/deepx-dxm1-ksyms.txt"
+        # Prove it landed where CONFIG_UNUSED_KSYMS_WHITELIST will look for it.
+        if [ ! -f "${S}/deepx-dxm1-ksyms.txt" ]; then
+            bbfatal "failed to stage deepx-dxm1-ksyms.txt into the kernel srctree (${S})."
+        fi
+        bbnote "DX-M1 ksym whitelist staged: ${S}/deepx-dxm1-ksyms.txt"
+    fi
+}

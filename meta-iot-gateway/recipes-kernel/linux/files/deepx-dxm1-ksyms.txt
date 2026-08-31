@@ -1,0 +1,20 @@
+# CONFIG_UNUSED_KSYMS_WHITELIST — symbols kept alive for the DEEPX DX-M1
+# out-of-tree NPU driver (dx_dma.ko) despite CONFIG_TRIM_UNUSED_KSYMS=y.
+#
+# Each entry is here because modpost named it, not because it looked plausible.
+# Evidence, from the failed build of dx-driver 2.6.0 against kernel 6.18.37:
+#   log.do_compile.2781313:
+#     ERROR: modpost: "get_user_pages_fast" [pci_deepx/dx_dma.ko] undefined!
+#     ERROR: modpost: "sched_set_normal"    [pci_deepx/dx_dma.ko] undefined!
+#
+# Both are EXPORT_SYMBOL_GPL in-tree (mm/gup.c:3300,
+# kernel/sched/syscalls.c:878) and both were absent from the built
+# Module.symvers, i.e. trimmed rather than missing. The driver's modules
+# declare MODULE_LICENSE("GPL")/("GPL v2"), so the GPL-only exports are
+# usable by it.
+#
+# DO NOT add symbols speculatively. Every line here widens the exported-symbol
+# surface that TRIM_UNUSED_KSYMS exists to shrink. Add one only when modpost
+# names it, and record the build log line that did.
+get_user_pages_fast
+sched_set_normal
