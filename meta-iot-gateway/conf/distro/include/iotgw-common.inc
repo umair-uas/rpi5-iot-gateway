@@ -247,6 +247,51 @@ DISTRO_FEATURES:remove:headless = " x11 wayland vulkan opengl pulseaudio"
 # Desktop profile: enable graphics/audio stacks, PAM and polkit (Wayland/Weston)
 DISTRO_FEATURES:append:desktop = " wayland opengl vulkan pulseaudio pam polkit"
 
+# ...but NOT the Xwayland X server. See PACKAGECONFIG:remove below.
+#
+# The desktop image was shipping xwayland 24.1.11 (9 unpatched CVEs) plus
+# weston-xwayland, in an image whose own weston.ini says `xwayland=false`.
+# Two things conspired:
+#
+#   * only the HEADLESS profile removed x11 (line above this block), so the
+#     desktop profile inherited it from the wrynose DISTRO_FEATURES_DEFAULTS;
+#   * weston-init.bb:20 derives its PACKAGECONFIG from that
+#         PACKAGECONFIG ??= "${@bb.utils.contains('DISTRO_FEATURES', 'x11', 'xwayland', '', d)}"
+#     and weston-init.bb:70 then INSERTS its own value into the config file
+#         sed -i -e "/^\[core\]/a xwayland=true" .../weston.ini
+#     `a` after `^[core]` appends immediately BELOW the section header — i.e.
+#     ABOVE our xwayland=false — and Weston's parser takes the FIRST match for
+#     a duplicated key. Our setting was shadowed, never overridden, so X11
+#     clients could connect on :0 regardless of what weston.ini said.
+#
+# The blunt fix — DISTRO_FEATURES:remove:desktop = " x11" — was tried and
+# REJECTED: pcmanfm and xdg-utils both carry REQUIRED_DISTRO_FEATURES = "x11"
+# (pcmanfm via startup-notification, xdg-utils via its xprop RDEPENDS), so the
+# image loses its only graphical file manager and no Wayland-native
+# replacement exists in the composed layer set. Verified with a `bitbake -n`
+# dependency dry run, which failed with "Nothing RPROVIDES 'xdg-utils'".
+#
+# So the removal is scoped to the X SERVER instead. This drops the xwayland
+# package, weston-xwayland, and the weston-init sed above.
+#
+# KNOWN LIMITATION, do not overstate this: libX11/libxcb REMAIN in the image,
+# pulled in by pcmanfm through gtk+3/startup-notification. This removes the X
+# server, not the X client libraries. Taking the rest would mean dropping
+# pcmanfm + xdg-utils and composing a layer that provides a Wayland-native
+# file manager.
+# Not scoped with a :desktop override on purpose. IOTGW_PROFILE/:desktop is set
+# build-WIDE in local_conf_header, so it is not a reliable per-image guard (the
+# same warning is in iot-gw-image-desktop.bb). It also is not needed: no image
+# in this distro wants an X server, and weston is only built for the desktop
+# profile anyway.
+#
+# weston's own "x11" PACKAGECONFIG goes too — that is -Dbackend-x11, the
+# backend for running Weston nested INSIDE an X server, which is meaningless on
+# a DRM/KMS bench machine and drags in virtual/libx11, libxcb and libxcursor as
+# build deps (weston_15.0.0.bb:61).
+PACKAGECONFIG:remove:pn-weston-init = "xwayland"
+PACKAGECONFIG:remove:pn-weston = "xwayland x11"
+
 # Desktop packages (consumed by image recipes via override)
 # Upstream weston-init manages the service and user/groups; we don't duplicate it.
 IOTGW_DESKTOP_PACKAGES ?= "weston wayland-utils mesa libdrm"
