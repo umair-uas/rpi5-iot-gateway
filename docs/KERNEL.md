@@ -659,7 +659,9 @@ cmd_sign = ... $(if $(KBUILD_EXTMOD),|| true)
 
 Kbuild swallows signing errors for out-of-tree modules. `modules_install`
 reports success and emits unsigned `.ko` files, which install cleanly and then
-fail to load at runtime with `ENOKEY` under `CONFIG_MODULE_SIG_FORCE=y`.
+fail to load at runtime with `EKEYREJECTED` under `CONFIG_MODULE_SIG_FORCE=y`
+(`ENOKEY` is only the internal verification result; the errno userspace sees
+under `sig_enforce` is `EKEYREJECTED` — `kernel/module/signing.c`).
 
 Nothing in the kernel or module build catches this. The only thing that does is
 the verification gate in

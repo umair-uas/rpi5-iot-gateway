@@ -95,7 +95,7 @@ local_conf_header:
     #
     #  1. Module signing. This distro sets CONFIG_MODULE_SIG_FORCE=y on every
     #     image (igw_security_prod is in the default IOTGW_KERNEL_FEATURES),
-    #     and dx-driver has no signing step. Its .ko will load with ENOKEY
+    #     and dx-driver has no signing step. Its .ko is rejected with EKEYREJECTED
     #     until one exists. Verified on target: sig_enforce=Y.
     #
     #  2. CONFIG_TRIM_UNUSED_KSYMS=y strips exported symbols unused by the

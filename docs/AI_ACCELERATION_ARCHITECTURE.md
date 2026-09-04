@@ -18,7 +18,7 @@ evidence, and remaining production work.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="diagrams/dxm1-pipeline.dark.svg">
-  <img alt="DX-M1 pipeline: trained model and DX-COM compile on the x86_64 host; only the compiled .dxnn crosses to the aarch64 target, where the kernel build signs the driver, PCI enumeration loads dx_dma followed by dxrt_driver, the unprivileged dxrtd runtime loads the model, and verified inference runs over a stable PCIe link to the NPU" src="diagrams/dxm1-pipeline.svg">
+  <img alt="DX-M1 pipeline: trained model and DX-COM compile on the x86_64 host; only the compiled .dxnn crosses to the aarch64 target, where the kernel build signs the driver against a persistent module-signing key, PCI enumeration loads dx_dma followed by dxrt_driver, the unprivileged dxrtd runtime loads the model, inference runs on the NPU over a stable PCIe link, and the DX-Stream GStreamer pipeline draws the annotated result to Weston on HDMI; an unsigned module is rejected with EKEYREJECTED" src="diagrams/dxm1-pipeline.svg">
 </picture>
 
 Two zones, because two different machines are involved, and understanding
