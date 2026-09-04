@@ -8,6 +8,10 @@ FILESEXTRAPATHS:prepend := "${THISDIR}/files:"
 
 inherit kernel
 inherit iotgw-kernel-fragments
+# Persistent CONFIG_MODULE_SIG_KEY (opt-in via IOTGW_MODULE_SIG_KEY_FILE).
+# Inherited AFTER iotgw-kernel-fragments so its do_configure postfunc sees
+# the merged .config.
+inherit iotgw-kernel-module-sig-key
 require recipes-kernel/linux/linux-yocto.inc
 
 LINUX_VERSION_EXTENSION = ""

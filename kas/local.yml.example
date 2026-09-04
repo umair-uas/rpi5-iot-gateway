@@ -106,6 +106,22 @@ local_conf_header:
     UBOOT_SIGN_KEYDIR  = "${IOTGW_RAUC_KEY_DIR}/fit"
     UBOOT_SIGN_KEYNAME = "iotgw-fit-dev"
 
+  module_signing: |
+    # === Kernel module signing (OPTIONAL, but required for rootfs-only OTA) ===
+    # Leave unset and Kbuild auto-generates a throwaway signing key on every
+    # kernel build. The kernel then trusts only that key, so modules built
+    # against build N cannot load on build N+1's kernel (this distro sets
+    # CONFIG_MODULE_SIG_FORCE=y). Point it at a persistent operator key to
+    # decouple kernel and module rebuilds.
+    #
+    # Generate one per docs/KERNEL.md ("Persistent module-signing key"). The
+    # PEM must hold BOTH the private key and its certificate.
+    #
+    # This is a FILE on the build host with no hardware protection — fine for
+    # lab/dev images, not a production posture. A production key belongs in the
+    # same HSM/YubiKey handling as the FIT key (docs/FIT_BOOT_SIGNING.md).
+    # IOTGW_MODULE_SIG_KEY_FILE = "${IOTGW_RAUC_KEY_DIR}/module-signing/iotgw-module-signing-dev.pem"
+
   fit_dtb_yk_pubkey_trust: |
     # Optional: U-Boot control-FDT trust rotation for FIT signing keys.
     #
