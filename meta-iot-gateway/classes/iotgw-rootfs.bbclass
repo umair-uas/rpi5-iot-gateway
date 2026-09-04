@@ -310,3 +310,86 @@ iotgw_rootfs_supplementary_groups() {
     done
 }
 ROOTFS_POSTPROCESS_COMMAND += " iotgw_rootfs_supplementary_groups;"
+
+# -----------------------------------------------------------------------------
+# Root account password-aging exemption
+# -----------------------------------------------------------------------------
+# The image ships root's shadow entry ALREADY EXPIRED. Two mechanisms combine:
+#
+#   1. iotgw-users.inc runs `usermod -p '<hash>' root`. root's base-passwd
+#      shadow entry carries no aging fields, so usermod fills them from our
+#      hardened /etc/login.defs (shadow_%.bbappend: PASS_MIN_DAYS 7,
+#      PASS_MAX_DAYS 90, PASS_WARN_AGE 14).
+#   2. Reproducible builds pin sp_lstchg to SOURCE_DATE_EPOCH -> 15069 days
+#      (2011-04-05). 90 days later is 2011-07-04.
+#
+# Result on target: `root 15069 7 90 14` — a password that expired ~15 years
+# before the build ran. It is normally MASKED because first-boot provisioning
+# rewrites root's entry into the persistent /etc overlay on /data, so the live
+# value is current. It bites in exactly two windows: a wiped or not-yet-mounted
+# /data, and early boot before the overlay is up. That was observed once as a
+# transient SSH lockout immediately after a slot-B reboot.
+#
+# THIS IS THE SAME BUG THAT KILLED WESTON. weston-init's useradd inherited the
+# identical 90-day aging, its account was born expired, and PAM refused the
+# session permanently (status=224/PAM) — see
+# recipes-graphics/weston/files/iotgw-weston-no-pam.conf. Weston was fixed by
+# dropping its PAM session; root cannot be, because root's PAM session is the
+# recovery path.
+#
+# The fix is deliberately scoped to root's /etc/shadow ENTRY, not to
+# /etc/login.defs:
+#   * login.defs keeps PASS_MAX_DAYS 90, so the hardening posture that Lynis
+#     AUTH-9286 checks — and every interactive account created later —
+#     is unchanged;
+#   * only the single account that must never be locked out is exempted.
+# This mirrors the existing precedent for `devel`, which is created with
+# `useradd -K PASS_MAX_DAYS=99999` in iotgw-dev-users.inc.
+#
+# 99999 matches that precedent and shadow's own "never expires" convention.
+# Set IOTGW_ROOT_PASSWORD_AGING = "1" to keep the aging fields as-is.
+IOTGW_ROOT_PASSWORD_AGING ??= "0"
+
+iotgw_rootfs_root_password_aging() {
+    local shadow_file="${IMAGE_ROOTFS}${sysconfdir}/shadow"
+    local tmp
+
+    [ "${IOTGW_ROOT_PASSWORD_AGING}" = "1" ] && return 0
+    [ -f "${shadow_file}" ] || return 0
+
+    if ! grep -q '^root:' "${shadow_file}"; then
+        bbfatal "iotgw-root-password-aging: no root entry in ${shadow_file#${IMAGE_ROOTFS}}"
+    fi
+
+    tmp="${shadow_file}.iotgw-aging-tmp"
+
+    # Field 5 is sp_max (maximum password age in days). Leave sp_lstchg (3),
+    # sp_min (4) and sp_warn (6) alone: with sp_max unlimited they no longer
+    # gate authentication, and rewriting sp_lstchg would break reproducibility.
+    awk -F: -v OFS=: '$1 == "root" { $5 = "99999" } { print }' \
+        "${shadow_file}" > "${tmp}"
+
+    # Same mode/ownership trap as the supplementary-group reconciler above:
+    # /etc/shadow is 0400 root-only, so `cat tmp > target` fails (silently, in
+    # a shell function), and a bare `mv` would take the tmp file's umask mode.
+    # chmod/chown the temp file, then mv — mv needs write permission on the
+    # directory, not on the target.
+    chmod --reference="${shadow_file}" "${tmp}"
+    chown --reference="${shadow_file}" "${tmp}" 2>/dev/null || true
+    if ! mv "${tmp}" "${shadow_file}"; then
+        rm -f "${tmp}"
+        bbfatal "iotgw-root-password-aging: failed to update ${shadow_file#${IMAGE_ROOTFS}}"
+    fi
+
+    if ! awk -F: '$1 == "root" && $5 == "99999" { found = 1 } END { exit !found }' \
+            "${shadow_file}"; then
+        bbfatal "iotgw-root-password-aging: root sp_max is not 99999 after rewrite"
+    fi
+
+    bbnote "iotgw-root-password-aging: root exempted from PASS_MAX_DAYS (sp_max=99999)"
+}
+
+# postfuncs, not ROOTFS_POSTPROCESS_COMMAND: oe-core's own rootfs postprocess
+# steps (and the extrausers processing that creates the entry) must have run
+# first, or the rewrite lands on a shadow file that is then replaced.
+do_rootfs[postfuncs] += "iotgw_rootfs_root_password_aging"
