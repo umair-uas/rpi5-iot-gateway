@@ -16,8 +16,10 @@
 #   scripts/run-target-checks.sh --list
 #
 # With no check names, runs the default smoke set (ota-fit-slot ota-smoke
-# container-smoke exposure). ota-bench is excluded from the default set (it is
-# a benchmark, not a pass/fail check) but can be named explicitly.
+# container-smoke exposure). ota-bench (a benchmark, not a pass/fail check) and
+# deepx-acceptance (DX-M1 only; it self-skips elsewhere, but a full inference
+# run does not belong in a smoke set) are excluded from the default set and can
+# be named explicitly.
 #
 # The "exposure" check asserts listen scope, address family, and firewall
 # qualification. It cannot test off-device reachability - a device cannot prove
@@ -29,6 +31,9 @@
 #   IOTGW_SSH_USER   SSH user (default: root)
 #   IOTGW_SSH_OPTS   SSH options (default disables strict host-key checking,
 #                    because the gateway's host key changes per A/B slot)
+#   IOTGW_REMOTE_ENV VAR=value pairs prefixed to the remote shell, for checks
+#                    that need a host-derived expectation, e.g.
+#                    IOTGW_REMOTE_ENV='IOTGW_DXM1_EXPECT_VERMAGIC=6.18.37-...'
 #
 # Exit status: 0 if every selected check passed; non-zero if any check
 # failed or could not be run (matches each target script's own exit contract).
@@ -45,14 +50,15 @@ check_path() {
         container-smoke) echo "container/container-smoke-target.sh" ;;
         ota-bench)       echo "ota/ota-bench-target.sh" ;;
         exposure)        echo "security/exposure-target.sh" ;;
+        deepx-acceptance) echo "deepx/dxm1-acceptance-target.sh" ;;
         *)               return 1 ;;
     esac
 }
-ALL_CHECKS="ota-fit-slot ota-smoke container-smoke ota-bench exposure"
+ALL_CHECKS="ota-fit-slot ota-smoke container-smoke ota-bench exposure deepx-acceptance"
 DEFAULT_CHECKS="ota-fit-slot ota-smoke container-smoke exposure"
 
 usage() {
-    sed -nE 's/^# ?//p' "${BASH_SOURCE[0]}" | sed -n '1,33p'
+    sed -nE 's/^# ?//p' "${BASH_SOURCE[0]}" | sed -n '1,39p'
 }
 
 list_checks() {
@@ -90,6 +96,15 @@ SSH_OPTS=(${IOTGW_SSH_OPTS:-$DEFAULT_SSH_OPTS})
 # Non-root users need sudo for the privileged checks; root does not.
 REMOTE_CMD="bash -s"
 [ "$SSH_USER" != "root" ] && REMOTE_CMD="sudo bash -s"
+
+# Some checks need a host-derived expectation the device cannot know — the
+# DX-M1 acceptance check compares the running kernel against the release the
+# flashed image was BUILT with, which is the only way to catch a stale card:
+# a stale image is internally self-consistent and passes every other check.
+# ssh does not forward the environment, so it is prefixed explicitly.
+if [ -n "${IOTGW_REMOTE_ENV:-}" ]; then
+    REMOTE_CMD="env ${IOTGW_REMOTE_ENV} ${REMOTE_CMD}"
+fi
 
 # Selected checks: remaining args, else the default set.
 if [ "$#" -gt 0 ]; then
