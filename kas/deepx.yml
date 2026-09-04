@@ -7,8 +7,9 @@ header:
 #
 # Upstream layer provides the out-of-tree NPU kernel module (dx-driver), the
 # DXRT userspace runtime (dx-rt), a GStreamer stack (dx-stream) and demos.
-# Nothing here is wired into an image yet; this overlay only makes the layer
-# available and parseable. See scratch/dxm1-integration-survey-2026-08-31.md.
+# This overlay only makes the layer available and parseable; the accelerator
+# packagegroup is gated separately on IOTGW_ENABLE_DEEPX_DXM1, which this file
+# sets. See docs/DEEPX_DXM1.md for the build gates and device policy.
 repos:
   meta-deepx-m1:
     url: https://github.com/DEEPX-AI/meta-deepx-m1.git
@@ -67,6 +68,13 @@ local_conf_header:
     # whitelist into the kernel srctree. It does NOT install any package into
     # an image yet — the packagegroup wiring is still outstanding.
     IOTGW_ENABLE_DEEPX_DXM1 = "1"
+
+  deepx_bundle_identity: |
+    # Keep accelerator bundles distinguishable from ordinary dev bundles in
+    # DEPLOY_DIR_IMAGE. Both build iot-gw-image-dev, so without a variant in
+    # BUNDLE_BASENAME the last build silently replaces the identically named
+    # .raucb from the other configuration.
+    BUNDLE_BASENAME:pn-iot-gw-bundle-full-fit = "${BUNDLE_IMAGE}-deepx-bundle-full-fit"
 
   deepx_rm_work: |
     # Keep the DeepX workdirs. This distro inherits rm_work globally

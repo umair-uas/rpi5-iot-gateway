@@ -72,3 +72,8 @@ SRC_URI:append = "${@' file://0007-arm64-dts-broadcom-bcm2712-rpi-5-b-add-ramoop
 # thermal-rpi5.cfg is a recipe-specific fragment; SRC_URI is derived from
 # IOTGW_KERNEL_FRAGMENTS by iotgw-kernel-fragments.bbclass.
 IOTGW_KERNEL_FRAGMENTS:append = " thermal-rpi5.cfg"
+
+# BCM2712 PCIe host bridge built in rather than modular. Unconditional: this is
+# board-level correctness, not a feature. See the fragment for the boot-ordering
+# evidence that motivated it.
+IOTGW_KERNEL_FRAGMENTS:append = " pcie-rpi5.cfg"
