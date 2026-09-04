@@ -6,19 +6,19 @@ using DEEPX DX-M1 as the concrete, currently-integrated example. Read
 (NPU, quantization, ONNX, model compiler vs. runtime) isn't already
 familiar.
 
-**Status note**: the diagram and prose below describe a *design* — the
-pipeline this layer is built to have. As of this writing it has not been
-demonstrated end-to-end on hardware; the image that exercises it is still
-building, and on-target acceptance hasn't run. For the current,
-authoritative state of what's verified versus not, see
-[DEEPX_DXM1.md](DEEPX_DXM1.md) — this doc does not restate that list, to
-avoid the two copies drifting.
+**Status note:** the target path shown below is hardware-validated. The project
+image completed real inference with non-zero DX-M1 utilization, passed 25
+acceptance checks with zero failures from a clean full-FIT RAUC installation on
+slot B, and required no target-side hand edits. The dashed host-side DX-COM
+workflow remains outside this repository and has not been exercised here.
+[DEEPX_DXM1.md](DEEPX_DXM1.md) is the authoritative source for versions,
+evidence, and remaining production work.
 
 ## The pipeline
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="diagrams/dxm1-pipeline.dark.svg">
-  <img alt="DX-M1 pipeline: trained model and DX-COM compile on the x86_64 host; only the compiled .dxnn crosses to the aarch64 target, where the kernel build signs the driver, boot-time module load enforces the signature (rejecting unsigned modules with ENOKEY), the dxrtd runtime loads the model, and inference runs over PCIe to the NPU" src="diagrams/dxm1-pipeline.svg">
+  <img alt="DX-M1 pipeline: trained model and DX-COM compile on the x86_64 host; only the compiled .dxnn crosses to the aarch64 target, where the kernel build signs the driver, PCI enumeration loads dx_dma followed by dxrt_driver, the unprivileged dxrtd runtime loads the model, and verified inference runs over a stable PCIe link to the NPU" src="diagrams/dxm1-pipeline.svg">
 </picture>
 
 Two zones, because two different machines are involved, and understanding
@@ -49,28 +49,28 @@ not the ONNX source, not the calibration data, not the compiler itself.
   result (checks for the signature trailer, fails the build if it's
   missing). There is exactly one signing authority; a second signer would
   risk corrupting or shadowing the first.
-- **Boot: module load.** This distro sets `CONFIG_MODULE_SIG_FORCE=y` on
-  every image, dev included — a module the kernel can't verify is rejected
-  outright (`ENOKEY`), not degraded. Only `dx_dma` is in
-  `KERNEL_MODULE_AUTOLOAD`; its `softdep dx_dma pre: dxrt_driver` line
-  (upstream, not ours) is what pulls `dxrt_driver` in first, in the
-  correct order.
+- **Boot: PCI enumeration and module load.** The BCM2712 PCIe host controller
+  is built in (`CONFIG_PCIE_BRCMSTB=y`). When it enumerates the endpoint, the
+  PCI modalias loads `dx_dma`; the vendor's `softdep dx_dma post:
+  dxrt_driver` then loads the character-device module after probe. There is
+  deliberately no forced `modules-load.d` entry. Every image enforces module
+  signatures with `CONFIG_MODULE_SIG_FORCE=y`; a module signed by an unknown
+  key is rejected with `EKEYREJECTED`.
 - **`dxrtd` runtime.** Runs as a dedicated `dxrt` user, not root, with
   `/dev/dxrt*` at `0660 root:dxrt` — narrower than upstream's default
   world-writable `0666`. Ordered after module load; gated on
   `/dev/dxrt*` actually existing, so a board with no card fitted doesn't
   crash-loop.
-- **NPU inference.** Over PCIe. The link is **connector-limited to a
-  single lane** — that's the Raspberry Pi 5's external FFC connector, not
-  the BCM2712 SoC (which has a 4-lane PCIe controller, already used
-  internally by the RP1 south bridge). Not something to chase on this
-  board.
+- **NPU inference.** Over a Gen2 x1 PCIe link. The lane width is fixed by the
+  Raspberry Pi 5 external FFC connector. DX-M1 images disable ASPM because an
+  on-target single-variable test showed that L1 power-state transitions caused
+  endpoint resets, correctable PCIe errors, and fatal config-space accesses;
+  with ASPM off, resets and AER errors remained at zero.
 
-The accent path in the diagram — module load → runtime → inference — is
-the part that's actually specific to *this* project's integration work.
-Everything on the host side, and the compiler in particular, is the general
-DEEPX platform capability that any DX-M1 integration (on any distro) would
-also need, and isn't something this repo builds or verifies.
+The solid accent path in the diagram — PCI enumeration → module load →
+runtime → inference — is both project-specific and now verified on hardware.
+The dashed host compiler path is the general DEEPX platform capability that
+this repo neither builds nor verifies.
 
 ### Confirming it's actually running, not silently falling back to CPU
 
@@ -97,13 +97,13 @@ won't discover on their own.
 | Layer | Provides | Maintained by |
 |---|---|---|
 | `meta-deepx-m1` (upstream) | Driver source, DX-RT runtime source, GStreamer plugin, demo apps | DeepX — pinned, never edited in place |
-| `meta-iot-gateway` (this repo) | Everything that makes the above work under this distro's hardening: signature verification, the kernel symbol whitelist, service/device policy, the feature gate | This project |
+| `meta-iot-gateway` (this repo) | Signature verification, kernel symbol whitelist, Raspberry Pi MSI mode, PCIe/ASPM policy, service/device policy, feature gate, acceptance tooling, and matched full-FIT bundles | This project |
 | Off-device entirely | DX-COM, training pipeline, calibration data | Not this repo's concern — host tooling |
 
 The project-side work exists because a hardened, FIT-signed, module-signing-
-enforced Yocto BSP is not what most vendor SDKs are written against — see
-[DEEPX_DXM1.md §"Not production ready"](DEEPX_DXM1.md#6-not-production-ready)
-for exactly which gaps that mismatch leaves open today.
+enforced Yocto BSP is not what most vendor SDKs are written against. See
+[DEEPX_DXM1.md §"Delivery and production status"](DEEPX_DXM1.md#7-delivery-and-production-status)
+for the gaps that remain.
 
 ## Two gates, not one
 
@@ -158,9 +158,8 @@ either is imminent.
 - [AI_ACCELERATION_101.md](AI_ACCELERATION_101.md) — vocabulary and the
   two-machine mental model, for readers new to this domain.
 - [DEEPX_DXM1.md](DEEPX_DXM1.md) — the technical reference: exact build
-  commands, the ksym-whitelist trap, licensing, and the current
-  not-production-ready list. The single source of truth for those; this
-  doc links to it rather than restating it.
+  commands, acceptance evidence, firmware boundary, the ksym-whitelist trap,
+  licensing, and remaining production work.
 - [FIT_BOOT_SIGNING.md](FIT_BOOT_SIGNING.md) — the operator-held signing-key
   model a future persistent module-signing key is meant to mirror.
 - [KERNEL.md](KERNEL.md) — kernel config, fragments, device-tree policy.

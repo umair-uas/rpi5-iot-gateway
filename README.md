@@ -21,8 +21,33 @@ A **hardened, embedded Linux distribution** for IoT gateway deployments on Raspb
 **Key Features:**
 - 🔄 **A/B OTA Updates** — Rootfs A/B updates with RAUC slot rollback semantics (enabled by default)
 - 🔒 **Security Hardened** — KSPP-aligned kernel, compiler flags, runtime hardening
+- ⚡ **Hardware-validated AI acceleration** — Optional DEEPX DX-M1 PCIe NPU stack with signed drivers and on-target inference checks
 - 📦 **Container Runtime** — Podman, Buildah, and Skopeo for containerized workloads
 - 🛠️ **Developer-Friendly** — Tooling for debugging and development
+
+---
+
+## ⚡ DEEPX DX-M1 AI Acceleration
+
+The optional DX-M1 stack has completed hardware acceptance on Raspberry Pi 5:
+the signed PCIe driver binds automatically, DX-RT discovers all three NPU
+cores, the unprivileged runtime starts, and the bundled YOLOv5s sample produces
+non-zero NPU utilization during inference. The acceptance run passed 25 checks
+with zero failures after a metadata-only full-FIT RAUC installation to slot B;
+no target-side hand edits were required.
+
+```bash
+make dev-deepx                    # Flashable development image
+make bundle-dev-deepx-full-fit    # OTA bundle with matching rootfs + FIT boot assets
+```
+
+The accelerator is opt-in and carries proprietary vendor software; images
+built with it must not be redistributed. See the
+[DX-M1 integration guide](docs/DEEPX_DXM1.md),
+[AI acceleration primer](docs/AI_ACCELERATION_101.md), and
+[pipeline architecture](docs/AI_ACCELERATION_ARCHITECTURE.md) for the verified
+boundary, firmware requirements, acceptance command, and remaining production
+work.
 
 ---
 
@@ -185,6 +210,9 @@ Detailed documentation is available in the `docs/` directory:
 - **[RAUC Update Runbook](docs/RAUC_UPDATE.md)** — Slot validation and adaptive update checks
 - **[FIT Boot and Signing](docs/FIT_BOOT_SIGNING.md)** — FIT flow, signing setup, and verification workflow
 - **[Overlay Reconciliation](docs/OVERLAY_RECONCILIATION.md)** — `/etc` drift-control architecture, policy model, and OTA tradeoffs
+- **[DEEPX DX-M1](docs/DEEPX_DXM1.md)** — Hardware-validated PCIe NPU integration, build/OTA commands, acceptance, and constraints
+- **[AI Acceleration 101](docs/AI_ACCELERATION_101.md)** — NPU vocabulary and the host/target model pipeline
+- **[AI Acceleration Architecture](docs/AI_ACCELERATION_ARCHITECTURE.md)** — Illustrated DX-M1 build-to-inference pipeline and reusable integration pattern
 
 ---
 

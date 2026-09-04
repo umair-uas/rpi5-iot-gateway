@@ -7,10 +7,13 @@ what an NPU, a model compiler, and a runtime are, skip to
 pipeline diagram, or [DEEPX_DXM1.md](DEEPX_DXM1.md) for this layer's actual
 build gates and traps.
 
-**Status note, read before the rest of this doc**: everything below describes
-a *design* — the shape the pipeline is built to have — not a demonstrated
-result. As of this writing no inference has run on this board; see
-[DEEPX_DXM1.md](DEEPX_DXM1.md) for what is and isn't verified.
+**Status note:** the target half of this pipeline is now demonstrated on the
+Raspberry Pi 5. The project image loads a signed DX-M1 driver, runs the DX-RT
+service without root privileges, executes the bundled YOLOv5s model on the
+NPU, and checks utilization to rule out CPU fallback. The host-side DX-COM
+compile-your-own-model workflow remains vendor-documented but unverified here.
+See [DEEPX_DXM1.md](DEEPX_DXM1.md) for the measured baseline and remaining
+production work.
 
 ---
 
@@ -49,7 +52,7 @@ accelerator story at all.
 | **TOPS** | Trillion Operations Per Second — the NPU's raw throughput ceiling. A spec-sheet number, not a guarantee of real-world FPS. |
 | **Quantization** | Shrinking a model's numbers (usually 32-bit floats) down to 8-bit integers before it runs on the NPU. Trades a small amount of accuracy for a large amount of speed and power — the NPU is often *built* to only do integer math fast. |
 | **ONNX** | Open Neural Network Exchange — a standard file format most training frameworks (PyTorch, TensorFlow) can export a trained model *to*. It's the universal hand-off point between "how the model was trained" and "how it gets compiled for a specific chip." |
-| **Model compiler** | Vendor-specific tool that takes an ONNX model and produces a binary the NPU can actually execute, quantizing and optimizing along the way. For DX-M1 this is DX-COM — vendor-documented as x86_64-host-only, not something anyone here has run or confirmed. |
+| **Model compiler** | Vendor-specific tool that takes an ONNX model and produces a binary the NPU can actually execute, quantizing and optimizing along the way. For DX-M1 this is DX-COM — vendor-documented as x86_64-host-only and not exercised by this repo. |
 | **Runtime** | The on-device library/service that loads the compiled model and drives the NPU at inference time. For DX-M1 this is DX-RT (`dxrtd`, `dxrt-cli`). |
 | **Driver** | The kernel-level piece that actually talks to the chip over its bus (here, PCIe) — memory mapping, DMA, interrupts. The runtime sits on top of it; you don't call the driver directly. |
 | **Inference** | Running the already-trained, already-compiled model against real input and getting a prediction back. This is the *only* thing that happens on the device — training happens elsewhere, once, ahead of time. |
@@ -128,10 +131,14 @@ when reading vendor documentation against a specific integration:
   vendor sample model** (`YoloV5S_PPU.dxnn`, bundled in `dx-stream-sample`)
   as an external input — nothing is compiled from source as part of this
   layer's build.
-- **What's actually been demonstrated on hardware**: as of this writing,
-  nothing yet — see the status note at the top of this doc and
-  [DEEPX_DXM1.md](DEEPX_DXM1.md)'s "Not production ready" section for the
-  current, authoritative state.
+- **What's actually been demonstrated on hardware**: driver autoload and bind,
+  enforced module signatures, `/dev/dxrt0`, an unprivileged `dxrtd`, device
+  telemetry, real inference with the bundled sample, and non-zero utilization
+  on all three NPU cores. The acceptance gate passed 25 checks with no failures
+  from a clean full-FIT RAUC installation on slot B, with no target-side hand
+  edits. See
+  [DEEPX_DXM1.md](DEEPX_DXM1.md#2-hardware-acceptance-milestone) for the
+  precise versions and caveats.
 
 ## 6. Where this layer's responsibility starts and ends
 
@@ -140,10 +147,11 @@ when reading vendor documentation against a specific integration:
   written or maintained here.
 - `meta-iot-gateway` (this repo, project-specific): everything needed to
   make that upstream layer work *on this hardened distro* — signature
-  verification for the driver, the symbol-whitelist fix, service/device
-  ownership policy, the feature gate, the license-acceptance question. This
-  is the delta a hardened Yocto BSP has to pay that a generic Ubuntu install
-  doesn't.
+  verification for the driver, the symbol-whitelist fix, Raspberry Pi MSI
+  mode, deterministic PCIe initialization, ASPM policy, service/device
+  ownership, the feature gate, acceptance tooling, and matched full-FIT OTA
+  packaging. This is the delta a hardened Yocto BSP has to pay that a generic
+  Debian installation doesn't.
 - Off this device entirely: DX-COM, the training pipeline, the calibration
   dataset. Host-side, x86_64, out of scope by design (see the operator
   constraints recorded in
@@ -163,7 +171,8 @@ when reading vendor documentation against a specific integration:
   pipeline diagram and "what gets built where," plus how this same shape
   would extend to a second accelerator vendor.
 - [DEEPX_DXM1.md](DEEPX_DXM1.md) — the technical reference: build gates,
-  signing authority, licensing, hardware notes, and the current
-  not-production-ready list. Read this before touching any recipe.
+  signing authority, firmware boundary, acceptance evidence, licensing,
+  hardware notes, and remaining production work. Read this before touching
+  any recipe.
 - [FIT_BOOT_SIGNING.md](FIT_BOOT_SIGNING.md) — the signing-key model a future
   persistent module-signing key is meant to mirror.
