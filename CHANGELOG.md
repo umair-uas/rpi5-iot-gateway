@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-09-04
+
+Adds a DEEPX DX-M1 NPU accelerator stack and a desktop lab image that runs
+on-screen inference, plus a persistent kernel module-signing key.
+
+**Read this before deploying anything from this release.** The accelerator and
+module-signing work is validated on hardware but is explicitly *not*
+production-complete. Specifically:
+
+- The module-signing key is a plain file on the build host with **no hardware
+  protection**. It is appropriate for development and lab images. A production
+  key belongs in the same HSM/YubiKey handling as the FIT signing key.
+- The kernel/module pairing guard in `bundle-hooks-fit.sh` is **fail-open** when
+  a bundle carries no bootfiles archive, so a mismatch is not caught.
+  **Rootfs-only OTA is unsupported for DX-M1; use full-FIT bundles.**
+- SELinux domains for the accelerator remain **permissive**. Acceptance records
+  denials as findings, not failures.
+- `iot-gw-image-desktop` is a lab/bench variant: **not hardened, not for
+  shipping.** It accepts commercial-flagged codecs and ships developer tooling.
+- **Production FIT release images cannot currently be produced.** The
+  release-trust profile trusts only the YubiKey FIT key, and that key material
+  is not currently available, so `bundle-prod-full-fit-resign` cannot run. The
+  build guard catches this and warns that the produced prod `.wic.zst` is not a
+  release artifact and is known-unbootable for initial SD flash. Base, dev and
+  desktop images and the dev OTA path are unaffected. Re-establishing the
+  signing trust anchor is prerequisite to any production release.
+- Accelerator firmware is upgraded out of band. This layer ships no firmware
+  payload, updater, rollback or fleet policy.
+
+### Added
+- DEEPX DX-M1 accelerator integration: out-of-tree `dx-driver`, the DX-RT
+  runtime under an unprivileged `dxrt` service account, and a device policy for
+  `/dev/dxrt*`. The BCM2712 PCIe host bridge is built in rather than modular so
+  the bridge cannot probe after the driver has looked for its device.
+- Desktop lab image with the DX-Stream GStreamer elements
+  (`dxpreprocess`/`dxinfer`/`dxpostprocess`/`dxosd`) rendering to Weston over
+  HDMI, including the H.264 software decode path the demo payload requires.
+- Persistent kernel module-signing key, opt-in via `IOTGW_MODULE_SIG_KEY_FILE`.
+  Without it Kbuild auto-generates a throwaway key per kernel build, so modules
+  built against one kernel cannot load on the next. See docs/KERNEL.md.
+- On-target DX-M1 acceptance suite producing evidence from the board rather than
+  from build metadata: module identity and signature, PCIe binding, device
+  policy, daemon identity, SELinux denials, and an inference run with a
+  CPU-fallback discriminator.
+- Documentation: DX-M1 field guide, AI-acceleration primers, a module-signing
+  runbook, and a boundary section on what can and cannot be taken from a newer
+  vendor suite checkout.
+
+### Changed
+- The headless dev image takes the base accelerator packagegroup rather than the
+  demo one; DX-Stream needs a Wayland compositor the headless profile does not
+  have.
+- The Xwayland server is no longer built for the desktop image. `weston-init`
+  derived it from `DISTRO_FEATURES` and injected `xwayland=true` above the
+  configured `xwayland=false`, so an X server shipped in an image whose own
+  configuration forbade it.
+- Disk-space guards raised from poky's 1G/100M defaults, which only fire once a
+  build has already filled the disk.
+
+### Fixed
+- Weston could not start on this distro at all (`status=224/PAM`). Accounts
+  created during rootfs assembly inherit `PASS_MAX_DAYS` from the hardened
+  `login.defs` and reproducible builds pin `lastchg` to the epoch, so the
+  compositor's account was born expired and PAM refused the session permanently.
+- `root`'s shadow entry shipped already expired by the same mechanism. The
+  exemption is scoped to root's `/etc/shadow` entry, not to `login.defs`, so the
+  hardening posture and all later accounts are unchanged.
+- The screen blanked mid-demo: `idle-time` was set in an `[idle]` section, which
+  Weston does not have, so the key was ignored and the 300s default applied.
+- `/etc/gshadow` drifted out of sync with supplementary group writes.
+
 ## [0.5.0] - 2026-07-15
 
 Migration from scarthgap to wrynose (Yocto 6.0 LTS). This is a reflash, not an
@@ -223,7 +294,9 @@ OTA — the RAUC compatible string does not guard the release-track jump.
 - Added adaptive OTA benchmark and troubleshooting guidance for field validation.
 - Added HTTPS streaming OTA notes and refreshed operational docs for build/partition/security flows.
 
-[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/umair-as/rpi5-iot-gateway/compare/v0.2.0...v0.3.0

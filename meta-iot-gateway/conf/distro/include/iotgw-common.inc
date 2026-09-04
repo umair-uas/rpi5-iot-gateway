@@ -11,7 +11,7 @@ TARGET_VENDOR ?= "-${VENDOR_SHORT_NAME}"
 # Distro/versioning policy (override OE-Core default 'nodistro.0')
 # Keep version components explicit so release policy can bump one field at a time.
 IOTGW_VERSION_MAJOR ?= "0"
-IOTGW_VERSION_MINOR ?= "5"
+IOTGW_VERSION_MINOR ?= "6"
 IOTGW_VERSION_PATCH ?= "0"
 IOTGW_VERSION ?= "${IOTGW_VERSION_MAJOR}.${IOTGW_VERSION_MINOR}.${IOTGW_VERSION_PATCH}"
 DISTRO_VERSION ?= "${VENDOR_SHORT_NAME}.${IOTGW_VERSION}"
