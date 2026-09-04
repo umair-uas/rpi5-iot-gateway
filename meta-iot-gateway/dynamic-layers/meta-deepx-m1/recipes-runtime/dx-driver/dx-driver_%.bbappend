@@ -1,3 +1,36 @@
+# --- Version pin: the upstream recipe's is wrong ---------------------------
+#
+# meta-deepx-m1 ships this recipe as dx-driver_2.6.0.bb, but its
+# SRCREV c05be168ea0c28757737035ea58aab6e59f03256 is the commit tagged
+# "v2.4.1" (2026-04-17). The module built from it reports MODULE_VERSION
+# 2.2.0. Three version numbers, none of which agree, and the tree is three
+# releases behind main.
+#
+# Repinned to the real v2.6.0 tip. This is not a routine bump — the older tree
+# is missing code that directly concerns this board:
+#
+#   * dx_link_health.c — PCIe link-health monitoring and auto-recovery, keyed
+#     on config-read status, Vendor ID != 0xFFFF, the DLLLA (Data Link Layer
+#     Link Active) bit, and negotiated speed/width. Our 2026-08-31 PCIe
+#     baseline recorded DLActive- while LnkSta still reported a speed and
+#     width, i.e. exactly the state this code exists to detect.
+#   * An MMIO guard, `mmio_safe = link_state == DX_LINK_UP && ret ==
+#     PCIBIOS_SUCCESSFUL && (command & PCI_COMMAND_MEMORY)`. On 2026-09-01
+#     the old driver reached "Probe Done!!" with Mem- and BusMaster- clear
+#     and BARs disabled; the runtime's first MMIO was an unclaimed PCIe
+#     transaction and the board took a fatal SError. Comm: dxrtd, UID 992.
+#   * RPI_BUILD — see the CONFIG_RPI_BUILD block below.
+#   * softdep changed from `pre:` to `post:` — see the autoload block below.
+#
+# Upstream file size for the PCIe driver alone: 773 lines at the old pin,
+# 1229 at v2.6.0.
+SRCREV = "7074748e7104f470b02f517583abba652b3f05fa"
+
+# LIC_FILES_CHKSUM is unchanged across the bump — LICENSE still md5
+# df0ebe3edba67d21cb2e798ef0ee2905, verified against the v2.6.0 tree, so the
+# recipe's existing checksum stays correct and is deliberately not restated.
+
+# --- wrynose source-layout port -------------------------------------------
 # Port meta-deepx-m1's dx-driver from its walnascar baseline to wrynose.
 #
 # The recipe sets S = "${WORKDIR}/git/modules". Up to and including walnascar
@@ -65,11 +98,43 @@ inherit iotgw-kernel-module-signing
 # Deleting it here leaves iotgw-deepx-runtime as the single owner, which also
 # means the 0666 rule is not merely overridden but never shipped at all.
 
-# Autoload the PCIe driver at boot. dx_dma is the only module named here on
-# purpose: the driver ships "softdep dx_dma pre: dxrt_driver" in dx_dma.conf,
-# so modprobe pulls dxrt_driver in FIRST. Listing both would be redundant and
-# would risk loading them in the wrong order.
-KERNEL_MODULE_AUTOLOAD += "dx_dma"
+# --- DO NOT re-add KERNEL_MODULE_AUTOLOAD ----------------------------------
+#
+# There is deliberately NO `KERNEL_MODULE_AUTOLOAD += "dx_dma"` here. It looks
+# like an omission; it is not. Adding it back reintroduces a boot-time race
+# that ends in a kernel panic loop.
+#
+# Why. `KERNEL_MODULE_AUTOLOAD` writes /usr/lib/modules-load.d/dx_dma.conf, and
+# systemd-modules-load modprobes it unconditionally and early. But this kernel
+# inherits CONFIG_PCIE_BRCMSTB=m from the mainline arm64 defconfig, so the
+# BCM2712 host bridge is ITSELF a module and does not load until later.
+# Measured on hardware 2026-09-01:
+#
+#   [3.116199] dx_dma: loading out-of-tree module        <- forced, too early
+#   [3.161570] dxrt_driver_cdev_init: 0 devices          <- nothing to find
+#   [4.701316] brcm-pcie 1000110000.pcie: host bridge... <- bus appears, +1.5s
+#   [4.832296] dx_dma_pcie 0001:01:00.0: enabling device <- endpoint probed
+#
+# dxrt_driver enumerates devices ONCE at module init and never rescans, so it
+# counted zero, no /dev/dxrt* was created, and dxrtd never started. The vendor's
+# `softdep dx_dma post: dxrt_driver` cannot help: it orders the two modules
+# relative to each other, and says nothing about whether a PCI bus exists yet.
+#
+# Without the forced entry, udev autoloads dx_dma from the module's own PCI
+# aliases (pci:v00001FF4d*) when the endpoint is enumerated — i.e. at exactly
+# the right moment — and the softdep then pulls dxrt_driver in behind it:
+#
+#   [4.818551] brcm-pcie: link up, 5.0 GT/s PCIe x1
+#   [5.210973] dx_dma: loading out-of-tree module        <- AFTER the bus
+#   [5.316246] [dx_dma_pcie_probe] Probe Done!!
+#   [5.424444] dxrt_driver_cdev_init: 1 devices          <- correct
+#
+# This is also why a stock Debian/DKMS install works: it ships no
+# modules-load.d entry and relies on the same modalias path.
+#
+# Setting CONFIG_PCIE_BRCMSTB=y would also fix the ordering, and is arguably
+# the better setting for fixed appliance hardware — but it is not required,
+# costs a full kernel rebuild, and modalias ordering is what was validated.
 
 # Make the recipe's own package pull the modules it built.
 #
@@ -92,6 +157,37 @@ RDEPENDS:${PN} += " \
     kernel-module-dx-dma-${KERNEL_VERSION} \
     kernel-module-dxrt-driver-${KERNEL_VERSION} \
 "
+
+# --- Raspberry Pi build path ----------------------------------------------
+#
+# v2.6.0 carries BCM2712-specific code behind RPI_BUILD, but upstream gates it
+# on a path substring test that CANNOT match a Yocto build
+# (modules/Makefile:15):
+#
+#     ifneq ($(findstring rpi,$(KERNEL_DIR)),)
+#     export CONFIG_RPI_BUILD=1
+#
+# Our KERNEL_DIR is ${STAGING_KERNEL_BUILDDIR}, whose path component is
+# "raspberrypi5" — which does not contain the substring "rpi" (…r-r-y-p-i…).
+# So the Pi path silently compiles OUT and the failure is invisible: a module
+# that builds, installs and loads, minus the code written for this SoC.
+#
+# What it enables, from the source comment at dw-edma-pcie.c:
+#   "BCM2712 (RPi CM5) brcmstb MSI controller allocates MSI vectors with
+#    unaligned base data (e.g. data=0xc with MME=3 gives base=8, not 0xc).
+#    The EP RTL generates data=(base & ~mask)|vector per PCI spec, but the
+#    host expects data=base+vector — mismatch silently drops NPU done MSIs.
+#    Force single MSI: all events muxed via SRAM SW IRQ block (dx_sw_irq)."
+#
+# Set explicitly rather than by faking the path. Passed as a make variable so
+# it reaches pci_deepx/Kbuild's `ifneq ($(CONFIG_RPI_BUILD),)` through
+# MAKEFLAGS. NOT a kernel Kconfig symbol despite the CONFIG_ prefix — it is
+# upstream's own build flag, so it cannot collide with Kconfig.
+#
+# VERIFY, do not assume: the single-MSI log string must be present in the
+# built object, otherwise this silently did nothing —
+#   ${TARGET_PREFIX}strings dx_dma.ko | grep 'forcing single MSI'
+EXTRA_OEMAKE:append = " CONFIG_RPI_BUILD=1"
 
 # buildpaths QA: strip the recorded GCC command line from debug info.
 #
