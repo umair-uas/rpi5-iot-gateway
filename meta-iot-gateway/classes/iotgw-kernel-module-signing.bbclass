@@ -103,7 +103,7 @@ iotgw_verify_kernel_module_signatures() {
     if [ -n "$unsigned" ]; then
         bbfatal "module signature check: UNSIGNED module(s):$unsigned" \
                 "This kernel runs CONFIG_MODULE_SIG_FORCE=y, so these would" \
-                "install correctly and then fail to load with ENOKEY." \
+                "install correctly and then fail to load with EKEYREJECTED." \
                 "Expected Kbuild's CONFIG_MODULE_SIG_ALL to sign them during" \
                 "modules_install — check that this recipe's install target" \
                 "actually routes through modules_install."

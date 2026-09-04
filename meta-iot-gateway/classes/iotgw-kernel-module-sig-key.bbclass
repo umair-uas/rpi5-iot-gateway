@@ -59,6 +59,13 @@ python () {
     if not keyfile:
         return
     import os
+    # Require an absolute path. The parse-time check below resolves a relative
+    # value against bitbake's CWD while the do_configure shell check resolves it
+    # against the task's, so a relative value could pass one and fail the other.
+    if not os.path.isabs(keyfile):
+        bb.fatal("IOTGW_MODULE_SIG_KEY_FILE must be an absolute path, got '%s'. "
+                 "A relative path resolves differently at parse time and at "
+                 "do_configure time." % keyfile)
     if not os.path.isfile(keyfile):
         bb.fatal("IOTGW_MODULE_SIG_KEY_FILE is set to '%s', which does not exist. "
                  "Generate it per docs/KERNEL.md (\"Persistent module-signing key\") "
@@ -132,7 +139,7 @@ do_configure[postfuncs] += "iotgw_install_module_sig_key"
 #
 # Kbuild swallows the error for out-of-tree modules, so modules_install
 # "succeeds" and emits unsigned .ko files that install fine and then fail to
-# load with ENOKEY under CONFIG_MODULE_SIG_FORCE=y. Only
+# load with EKEYREJECTED under CONFIG_MODULE_SIG_FORCE=y. Only
 # iotgw-kernel-module-signing.bbclass' verification gate catches it — which it
 # did, on the first build after this class was introduced.
 #

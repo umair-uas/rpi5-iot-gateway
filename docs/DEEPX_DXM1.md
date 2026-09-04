@@ -59,7 +59,14 @@ B. Every fix came from repository metadata and the matching full-FIT bundle:
 | Runtime result | `/dev/dxrt0` present; `dxrtd` active as user `dxrt` |
 | Inference | `YoloV5S_PPU.dxnn`; non-zero utilization on all three NPU cores |
 | Boot/update | slot-specific `fitImage-b`; `pcie_aspm=off`; `rauc.slot=B` |
-| Acceptance | `PASS=25 FAIL=0 SKIP=1 FINDING=1` after full-FIT RAUC installation |
+| Acceptance | `PASS=26 FAIL=0 SKIP=0 FINDING=1` after full-FIT RAUC installation |
+
+The single FINDING is the SELinux gap recorded in section 7: DX-M1 domains are
+still permissive, so acceptance records denials rather than failing on them. An
+earlier run reported `SKIP=1` because the `dxtop` sampler needs both `TERMINFO`
+and `TERM` plus a sized pty, which a piped ssh session does not provide; the
+suite now sets them, so the CPU-fallback check runs instead of degrading to a
+skip that reads like a pass.
 
 Observed sample rates vary substantially with the model and output pipeline and
 must not be presented as a general DX-M1 benchmark. `dxtop` utilization during

@@ -60,7 +60,7 @@ S = "${UNPACKDIR}/${BP}/modules"
 # CONFIG_MODULE_SIG_FORCE=y (igw_security_prod is in the default
 # IOTGW_KERNEL_FEATURES), confirmed on target as sig_enforce=Y. Upstream
 # dx-driver has no signing step, so without this its .ko would install
-# correctly and then fail to load with ENOKEY.
+# correctly and then fail to load with EKEYREJECTED.
 #
 # Kbuild is the signer, not us: this recipe's install target routes through
 # `modules_install` (modules/Makefile:74) and the kernel sets
