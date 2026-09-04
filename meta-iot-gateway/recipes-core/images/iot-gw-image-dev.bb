@@ -20,7 +20,7 @@ IMAGE_FEATURES += " \
 # Core packages and developer tools
 CORE_IMAGE_EXTRA_INSTALL += " \
     packagegroup-iot-gw-dev \
-    ${@bb.utils.contains('IOTGW_ENABLE_DEEPX_DXM1', '1', 'packagegroup-iot-gw-deepx-demo', '', d)} \
+    ${@bb.utils.contains('IOTGW_ENABLE_DEEPX_DXM1', '1', 'packagegroup-iot-gw-deepx', '', d)} \
     packagegroup-iot-gw-security \
     packagegroup-core-buildessential \
     dtc \

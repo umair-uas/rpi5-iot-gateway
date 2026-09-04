@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Wed, 2 Sep 2026 19:05:00 +0200
+Subject: [PATCH] OC_SORT: use float literals in the Eigen min/max clamp
+
+Association.cpp clamps a float array with integer literals:
+
+    diff_angle_cos.array().min(1).max(-1)
+
+`diff_angle_cos` is an Eigen::MatrixXf, so its Scalar is float. Eigen 3.4
+declares two overloads of ArrayBase::min() — one taking another array
+expression, one taking a Scalar. With an `int` argument neither is an exact
+match, and the array-expression overload wins template deduction, so Eigen
+instantiates CwiseBinaryOp<scalar_min_op<float,float>, ArrayWrapper<...>,
+const int>. That requires Eigen::internal::traits<const int>, which does not
+exist, and the build dies in a wall of template errors inside Eigen headers
+rather than at the call site:
+
+    Eigen/src/Core/util/ForwardDeclarations.h:23:29: error: invalid use of
+        incomplete type 'struct Eigen::internal::traits<int>'
+    Eigen/src/Core/CwiseBinaryOp.h:77:7: error: no type named 'StorageKind'
+        in 'struct Eigen::internal::traits<const int>'
+    .../OC_SORT/src/Association.cpp:182:52: error: 'const class
+        Eigen::CwiseBinaryOp<..., const int>' has no member named 'max'
+
+Spelling the literals as float makes the Scalar overload an exact match, which
+is what the code already meant. The clamp bounds are unchanged: this is the
+cosine of an angle being clamped to [-1, 1] before Eigen::acos(), and 1.0f and
+-1.0f are exactly representable, so the numerical behaviour is identical.
+
+Only this one call site in the plugin passes integer literals to a float
+min()/max(); every other clamp already uses float literals.
+
+Found building dx-stream 3.1.1 against Eigen 3.4.1 (libeigen from
+meta-openembedded, Yocto wrynose) for aarch64.
+
+Upstream-Status: Pending
+Assisted-by: claude-code:claude-opus-5
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+---
+--- a/gst-dxstream-plugin/src/tracker/OC_SORT/src/Association.cpp
++++ b/gst-dxstream-plugin/src/tracker/OC_SORT/src/Association.cpp
+@@ -179,7 +179,7 @@
+ 
+     Eigen::MatrixXf diff_angle_cos =
+         inertia_X_.array() * X.array() + inertia_Y_.array() * Y.array();
+-    diff_angle_cos = diff_angle_cos.array().min(1).max(-1).matrix();
++    diff_angle_cos = diff_angle_cos.array().min(1.0f).max(-1.0f).matrix();
+ 
+     Eigen::MatrixXf diff_angle = Eigen::acos(diff_angle_cos.array());
+     diff_angle = ((PI / 2.0f - diff_angle.array().abs()) / PI).matrix();
+-- 
+2.43.0
+

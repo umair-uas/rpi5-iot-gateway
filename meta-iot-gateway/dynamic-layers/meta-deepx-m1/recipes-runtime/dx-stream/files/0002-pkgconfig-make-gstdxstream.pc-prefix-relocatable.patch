@@ -1,0 +1,100 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+Date: Wed, 2 Sep 2026 19:35:00 +0200
+Subject: [PATCH] pkgconfig: make gstdxstream.pc prefix relocatable
+
+The build installs the plugin into a DESTDIR staging tree and then builds the
+custom_library/postprocess_library/* projects against it, pointing pkg-config
+at that tree:
+
+    DESTDIR="$S/install" meson install
+    export PKG_CONFIG_PATH="$S/install/usr/lib/pkgconfig:$PKG_CONFIG_PATH"
+
+meson's pkgconfig module always writes the absolute install prefix, so the
+staged gstdxstream.pc says `prefix=/usr`. That is right for the installed
+target copy and wrong for this staged one, and pkg-config does not correct it:
+PKG_CONFIG_SYSROOT_DIR is only applied to .pc files found underneath the
+sysroot, and this one is deliberately outside it. The postprocess libraries
+were therefore handed literal host paths:
+
+    pkg-config --cflags gstdxstream  ->  -I/usr/include
+    pkg-config --libs   gstdxstream  ->  -L/usr/lib/gstreamer-1.0 -lgstdxstream
+
+while the sibling gstreamer-1.0 flags in the same invocation were correctly
+rewritten into the sysroot, which is what makes the asymmetry visible in
+meson-log.txt.
+
+The -I is caught by gcc and is fatal when the toolchain is built with
+--enable-poison-system-directories, as OpenEmbedded's is:
+
+    cc1plus: error: include location "/usr/include" is unsafe for
+        cross-compilation [-Werror=poison-system-directories]
+
+The -L is the more dangerous half and is silent: it puts the build host's
+library directory on the search path of a cross link. It resolves correctly
+today only because the caller happens to pass an explicit -L into the staging
+tree first.
+
+Emit the .pc from a template so prefix can be written relative to ${pcfiledir}.
+The .pc lives in <prefix>/lib/pkgconfig, so ${pcfiledir}/../.. is <prefix> in
+both cases: $S/install/usr while cross-compiling, /usr once installed on the
+target. No consumer needs to change, and the generated target .pc is
+byte-equivalent in meaning to the previous one.
+
+Upstream-Status: Pending
+Assisted-by: claude-code:claude-opus-5
+Signed-off-by: Umair Ahmed Shah <umairahmedshah@hotmail.com>
+---
+--- a/gst-dxstream-plugin/src/meson.build
++++ b/gst-dxstream-plugin/src/meson.build
+@@ -125,17 +125,21 @@
+   )
+ endif
+ 
+-# Generate pkg-config file
+-pkg = import('pkgconfig')
+-pkg.generate(
+-    gstdxstream,
+-    name: 'gstdxstream',
+-    filebase: 'gstdxstream',
+-    description: 'DeepX Stream GStreamer Plugin',
+-    requires: ['gstreamer-1.0 >= 1.0'],
+-    variables: [
+-        'plugindir=' + '${libdir}' / 'gstreamer-1.0'
+-    ],
++# Generate pkg-config file.
++#
++# Written from a template rather than via the pkgconfig module so that `prefix`
++# can be expressed relative to ${pcfiledir}. The module always emits the
++# absolute install prefix (/usr), which is correct on the target but wrong while
++# cross-compiling: the custom_library/ postprocess libraries consume this .pc
++# out of a DESTDIR staging tree, and an absolute /usr made pkg-config hand them
++# -I/usr/include and -L/usr/lib/gstreamer-1.0 -- host paths. A ${pcfiledir}
++# relative prefix resolves correctly in both places.
++pkg_conf = configuration_data()
++pkg_conf.set('VERSION', meson.project_version())
++configure_file(
++    input: 'gstdxstream.pc.in',
++    output: 'gstdxstream.pc',
++    configuration: pkg_conf,
+     # Install to lib/pkgconfig (standard location, not lib/arch/pkgconfig!)
+     install_dir: join_paths(get_option('prefix'), 'lib', 'pkgconfig')
+ )
+--- /dev/null
++++ b/gst-dxstream-plugin/src/gstdxstream.pc.in
+@@ -0,0 +1,12 @@
++prefix=${pcfiledir}/../..
++includedir=${prefix}/include
++libdir=${prefix}/lib
++
++plugindir=${libdir}/gstreamer-1.0
++
++Name: gstdxstream
++Description: DeepX Stream GStreamer Plugin
++Version: @VERSION@
++Requires: gstreamer-1.0 >=  1.0
++Libs: -L${libdir}/gstreamer-1.0 -lgstdxstream
++Cflags: -I${includedir}
+-- 
+2.43.0
+

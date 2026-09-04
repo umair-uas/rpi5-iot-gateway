@@ -65,7 +65,28 @@ SUMMARY:${PN}-demo = "DX-M1 inference demo payload and examples"
 # dx-rt-examples omitted for the same reason as dx-rt-cli above: it is an
 # empty package that is never produced. The sample payload carries the model,
 # video and run script, which is what the demo actually needs.
+# dx-stream added 2026-09-01. Without it the sample is inert: the payload's
+# run.sh is a GStreamer pipeline
+#
+#   urisourcebin ! decodebin ! dxpreprocess ! dxinfer ! dxpostprocess ! dxosd
+#   ! videoconvert ! waylandsink
+#
+# and dxpreprocess/dxinfer/dxpostprocess/dxosd are GStreamer ELEMENTS shipped by
+# dx-stream, not by dx-stream-sample. Shipping only the sample gave a model, a
+# video and a script that cannot run — which is exactly what the headless dev
+# image did, and why the on-screen demo was impossible there.
+#
+# dx-stream also needs a Wayland compositor and the oe-core GStreamer stack, so
+# this -demo package is only meaningful in the desktop image. The headless dev
+# image pulls ${PN}, not ${PN}-demo.
+#
+# NOTE: dx-stream requires the wrynose S port in
+# dynamic-layers/meta-deepx-m1/recipes-runtime/dx-stream/dx-stream_%.bbappend.
+# Its build deps (opencv, librdkafka, libeigen from meta-oe; libyuv from
+# meta-deepx-m1 itself) all resolve in the current composition — verified by
+# recipe search — but opencv is a heavy first-time build; budget for it.
 RDEPENDS:${PN}-demo = " \
     ${PN} \
+    dx-stream \
     dx-stream-sample \
 "

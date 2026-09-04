@@ -14,3 +14,32 @@ local_conf_header:
   desktop_kernel: |
     # Ensure GPU/V4L2/media features for desktop workloads
     IOTGW_KERNEL_FEATURES = "igw_networking_iot igw_security_prod igw_compute_media"
+  desktop_license_flags: |
+    # Accept the "commercial" LICENSE_FLAGS for the H.264 decode path only.
+    #
+    # The DX-M1 demo payload (dx-stream-sample) ships an H.264/avc1 1920x1080
+    # boat.mp4 and a run.sh built on `decodebin`. The RPi5 has no H.264 hardware
+    # decoder (VideoCore VII kept HEVC, dropped H.264), so software decode via
+    # gstreamer1.0-libav is the only path, and both it and ffmpeg are flagged
+    # "commercial" in oe-core.
+    #
+    # Scoped here, in the DESKTOP overlay, on purpose: this overlay is only
+    # composed for iot-gw-image-desktop, which is an explicitly NOT-HARDENED,
+    # not-for-shipping lab image (see the recipe SUMMARY). base/dev/prod never
+    # compose this file and so never inherit the acceptance.
+    #
+    # Named individually rather than a blanket "commercial" so adding any other
+    # commercial-flagged recipe stays a deliberate, reviewable act. The
+    # "<flag>_<pn>" form is what oe/license.py:license_flag_matches() tests
+    # first, so these match exactly.
+    #
+    # MUST be :append, not "=". rpi5.yml:150 assigns LICENSE_FLAGS_ACCEPTED with
+    # a plain "=" for the RPi Synaptics WiFi/BT firmware, and kas emits that
+    # AFTER this overlay -- a plain "=" here is silently clobbered (which is how
+    # this was first written, and the build failed with "Nothing RPROVIDES
+    # gstreamer1.0-libav ... not listed in your LICENSE_FLAGS_ACCEPTED").
+    # Assigning with "=" so as to win the ordering would be worse: it would drop
+    # synaptics-killswitch and take the WiFi/BT firmware out of every image built
+    # in this composition. :append is applied after all "=" assignments, so both
+    # survive.
+    LICENSE_FLAGS_ACCEPTED:append = " commercial_ffmpeg commercial_gstreamer1.0-libav"
